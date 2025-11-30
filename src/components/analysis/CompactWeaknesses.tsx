@@ -1,0 +1,98 @@
+import React from 'react';
+import { View, Text, StyleSheet } from 'react-native';
+import { BlurView } from 'expo-blur';
+import { MotiView } from 'moti';
+import { Ionicons } from '@expo/vector-icons';
+import { colors } from '../../theme/colors';
+import { Accordion } from './Accordion';
+
+interface CompactWeaknessesProps {
+  weaknesses: string[];
+}
+
+export const CompactWeaknesses: React.FC<CompactWeaknessesProps> = ({
+  weaknesses,
+}) => {
+  // Limiter à 5 max
+  const displayWeaknesses = weaknesses.slice(0, 5);
+
+  return (
+    <MotiView
+      from={{ opacity: 0, translateX: 50 }}
+      animate={{ opacity: 1, translateX: 0 }}
+      transition={{ type: 'timing', duration: 600, delay: 1000 }}
+      style={styles.container}
+    >
+      <BlurView intensity={20} tint="dark" style={styles.blurContainer}>
+        <View style={styles.header}>
+          <Ionicons name="alert-circle" size={20} color={colors.error} />
+          <Text style={styles.title}>Points Faibles</Text>
+        </View>
+
+        <View style={styles.bullets}>
+          {displayWeaknesses.map((weakness, index) => (
+            <View key={index} style={styles.bulletItem}>
+              <Ionicons name="close-circle" size={16} color={colors.error} />
+              <Text style={styles.bulletText} numberOfLines={1}>
+                {weakness}
+              </Text>
+            </View>
+          ))}
+        </View>
+
+        {weaknesses.length > 5 && (
+          <Accordion
+            title="Voir tous les points faibles"
+            items={weaknesses.slice(5)}
+            icon="chevron-down"
+            color={colors.error}
+            compact={false}
+          />
+        )}
+      </BlurView>
+    </MotiView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    marginHorizontal: 20,
+    marginBottom: 20,
+  },
+  blurContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)', // bg-white/5
+    borderRadius: 32, // rounded-3xl (32px)
+    padding: 28,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)', // border-white/20
+    shadowColor: colors.glow.error,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  title: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.error,
+    marginLeft: 8,
+  },
+  bullets: {
+    gap: 10,
+  },
+  bulletItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  bulletText: {
+    flex: 1,
+    fontSize: 13,
+    color: colors.text.primary,
+    marginLeft: 8,
+  },
+});
+
