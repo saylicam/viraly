@@ -33,12 +33,14 @@ module.exports = () => {
         "expo-camera",
         "expo-media-library",
         "expo-apple-authentication",
+        "expo-web-browser",          // ← Plugin ajouté ici
       ],
 
       extra: {
         apiUrl: "http://192.168.0.12:3333",
         googleClientId: "453062794883-3a7vsltfbn8km4fejtcelh5m2uakuti1.apps.googleusercontent.com",
         redirectUrl: "https://auth.expo.dev/@maloxi/viraly",
+
         firebaseApiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
         firebaseAuthDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
         firebaseProjectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,

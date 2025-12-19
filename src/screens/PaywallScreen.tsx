@@ -1,53 +1,40 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, Animated, TouchableOpacity, SafeAreaView, Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
-import { Ionicons } from '@expo/vector-icons';
+import { Sparkles, Zap, Target, TrendingUp, BarChart3, X } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
-import { theme } from '../theme';
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 
 interface PaywallScreenProps {
   navigation: any;
 }
 
-const FEATURES = [
+const BENEFITS = [
   {
-    icon: 'analytics',
-    title: 'Analyses illimitées',
-    description: 'Analyse autant de vidéos que tu veux avec l\'IA',
-    gradient: ['#8b5cf6', '#a855f7'],
+    icon: Sparkles,
+    title: 'Analyse IA illimitée',
+    color: '#FF4FF9', // Rose néon
   },
   {
-    icon: 'trending-up',
-    title: 'Tendances en temps réel',
-    description: 'Accès aux hashtags et sons les plus viraux du moment',
-    gradient: ['#ec4899', '#f472b6'],
+    icon: Zap,
+    title: 'Score viral instantané',
+    color: '#B371FF', // Violet clair néon
   },
   {
-    icon: 'bulb',
+    icon: Target,
     title: 'Conseils personnalisés',
-    description: 'Recommandations adaptées à ton style de contenu',
-    gradient: ['#f59e0b', '#fbbf24'],
+    color: '#5AC8FA', // Bleu néon
   },
   {
-    icon: 'stats-chart',
-    title: 'Analytics avancés',
-    description: 'Suis tes performances et optimise tes stratégies',
-    gradient: ['#10b981', '#059669'],
+    icon: TrendingUp,
+    title: 'Optimisations intelligentes',
+    color: '#FFD84F', // Jaune néon
   },
   {
-    icon: 'rocket',
-    title: 'Support prioritaire',
-    description: 'Accès en priorité à notre équipe d\'experts',
-    gradient: ['#ef4444', '#dc2626'],
-  },
-  {
-    icon: 'diamond',
-    title: 'Contenu exclusif',
-    description: 'Tutoriels et guides réservés aux membres Pro',
-    gradient: ['#8b5cf6', '#ec4899'],
+    icon: BarChart3,
+    title: 'Timeline + Retention Map',
+    color: '#42FFB0', // Vert néon
   },
 ];
 
@@ -55,357 +42,534 @@ export default function PaywallScreen({ navigation }: PaywallScreenProps) {
   const [isLoading, setIsLoading] = useState(false);
   
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(50)).current;
-  const scaleAnim = useRef(new Animated.Value(0.9)).current;
+  const glowAnim = useRef(new Animated.Value(0.5)).current;
+  const ctaGlowAnim = useRef(new Animated.Value(0.5)).current;
 
   useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        tension: 50,
-        friction: 8,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 600,
+      useNativeDriver: true,
+    }).start();
+
+    // Animation glow pulsant pour l'icône
+    const glowAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(glowAnim, {
+          toValue: 1,
+          duration: 2000,
+          useNativeDriver: false,
+        }),
+        Animated.timing(glowAnim, {
+          toValue: 0.5,
+          duration: 2000,
+          useNativeDriver: false,
+        }),
+      ])
+    );
+    glowAnimation.start();
+
+    // Animation pulsation pour le CTA glow
+    const ctaGlowAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(ctaGlowAnim, {
+          toValue: 1,
+          duration: 2000,
+          useNativeDriver: false,
+        }),
+        Animated.timing(ctaGlowAnim, {
+          toValue: 0.5,
+          duration: 2000,
+          useNativeDriver: false,
+        }),
+      ])
+    );
+    ctaGlowAnimation.start();
+
+    return () => {
+      glowAnimation.stop();
+      ctaGlowAnimation.stop();
+    };
   }, []);
-
-  const handleSubscribe = async () => {
-    setIsLoading(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-    try {
-      // Simulate subscription process
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert(
-        'Félicitations !',
-        'Tu es maintenant membre Viraly Pro !',
-        [{ text: 'OK', onPress: () => navigation.goBack() }]
-      );
-    } catch (error) {
-      Alert.alert('Erreur', 'Impossible de finaliser l\'abonnement');
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const handleClose = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     navigation.goBack();
   };
 
+  const handleActivatePremium = async () => {
+    setIsLoading(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    try {
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      // TODO: Intégrer RevenueCat ici
+      navigation.goBack();
+    } catch (error) {
+      console.error('Erreur lors de l\'abonnement:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleAlreadyPremium = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    navigation.goBack();
+  };
+
+  const glowOpacity = glowAnim.interpolate({
+    inputRange: [0.5, 1],
+    outputRange: [0.3, 0.5],
+  });
+
+  const ctaGlowOpacity = ctaGlowAnim.interpolate({
+    inputRange: [0.5, 1],
+    outputRange: [0.2, 0.35],
+  });
+
   return (
-    <LinearGradient
-      colors={[theme.colors.bg.primary, theme.colors.bg.secondary, theme.colors.bg.primary]}
-      style={styles.container}
-    >
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
+    <SafeAreaView style={styles.safeArea}>
+      <LinearGradient
+        colors={['#0A0214', '#14052A', '#0A0214']}
+        locations={[0, 0.5, 1]}
+        style={styles.container}
       >
         <Animated.View
           style={[
             styles.content,
             {
               opacity: fadeAnim,
-              transform: [
-                { translateY: slideAnim },
-                { scale: scaleAnim }
-              ]
-            }
+            },
           ]}
         >
-          {/* Header */}
+          {/* Header avec bouton fermer */}
           <View style={styles.header}>
             <TouchableOpacity
               style={styles.closeButton}
               onPress={handleClose}
+              activeOpacity={0.7}
             >
-              <Ionicons name="close" size={24} color={theme.colors.text.primary} />
+              <X size={18} color="#9CA3AF" strokeWidth={2} />
             </TouchableOpacity>
-            <Text style={styles.title}>Viraly Pro</Text>
-            <View style={styles.placeholder} />
           </View>
 
-          {/* Hero Section */}
-          <View style={styles.heroSection}>
-            <LinearGradient
-              colors={theme.colors.gradient.primary}
-              style={styles.heroIcon}
+          {/* Header Section avec halo lumineux */}
+          <View style={styles.headerSection}>
+            {/* Halo lumineux derrière l'icône */}
+            <View style={styles.iconHaloContainer}>
+              <View style={styles.iconHalo} />
+            </View>
+
+            {/* Icône ronde néon */}
+            <Animated.View
+              style={[
+                styles.iconGlow,
+                {
+                  opacity: glowOpacity,
+                },
+              ]}
             >
-              <Ionicons name="diamond" size={40} color="white" />
-            </LinearGradient>
-            
-            <Text style={styles.heroTitle}>Débloque tout ton potentiel</Text>
-            <Text style={styles.heroSubtitle}>
-              Passe à Viraly Pro et maximise tes chances de devenir viral
+              <LinearGradient
+                colors={['#C25CFF', '#FF4FF9', '#5AC8FA']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.iconContainer}
+              >
+                <Sparkles size={24} color="#FFFFFF" strokeWidth={2.5} />
+              </LinearGradient>
+            </Animated.View>
+
+            {/* Titre */}
+            <Text style={styles.title}>
+              Viraly Premium <Text style={styles.sparkle}>✨</Text>
+            </Text>
+
+            {/* Highlight Bar */}
+            <View style={styles.highlightBar}>
+              <LinearGradient
+                colors={['#C25CFF', '#FF4FF9', '#5AC8FA']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                locations={[0, 0.5, 1]}
+                style={styles.highlightBarGradient}
+              />
+            </View>
+
+            {/* Sous-titre */}
+            <Text style={styles.subtitle}>
+              Débloque toute la puissance de l'Analyse IA
             </Text>
           </View>
 
-          {/* Pricing */}
-          <BlurView intensity={20} tint="dark" style={styles.pricingCard}>
-            <View style={styles.pricingHeader}>
-              <Text style={styles.pricingTitle}>Abonnement mensuel</Text>
-              <View style={styles.pricingBadge}>
-                <Text style={styles.pricingBadgeText}>Populaire</Text>
-              </View>
-            </View>
-            
-            <View style={styles.pricingAmount}>
-              <Text style={styles.pricingCurrency}>€</Text>
-              <Text style={styles.pricingValue}>9,99</Text>
-              <Text style={styles.pricingPeriod}>/mois</Text>
-            </View>
-            
-            <Text style={styles.pricingDescription}>
-              Annule quand tu veux • Aucun engagement
-            </Text>
-          </BlurView>
-
-          {/* Features */}
-          <View style={styles.featuresContainer}>
-            <Text style={styles.featuresTitle}>Ce que tu obtiens :</Text>
-            
-            {FEATURES.map((feature, index) => (
-              <View key={index} style={styles.feature}>
-                <LinearGradient
-                  colors={feature.gradient as [string, string]}
-                  style={styles.featureIcon}
+          {/* Section Avantages - Cartes refaites */}
+          <View style={styles.benefitsSection}>
+            {BENEFITS.map((benefit, index) => {
+              const Icon = benefit.icon;
+              
+              return (
+                <TouchableOpacity
+                  key={index}
+                  activeOpacity={0.88}
+                  style={styles.benefitCard}
                 >
-                  <Ionicons name={feature.icon as any} size={20} color="white" />
-                </LinearGradient>
-                <View style={styles.featureContent}>
-                  <Text style={styles.featureTitle}>{feature.title}</Text>
-                  <Text style={styles.featureDescription}>{feature.description}</Text>
-                </View>
-                <Ionicons name="checkmark-circle" size={20} color={theme.colors.success} />
-              </View>
-            ))}
+                  {/* Bordure dégradé */}
+                  <LinearGradient
+                    colors={['#C25CFF', '#5AC8FA']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.benefitBorder}
+                  />
+                  
+                  <View style={styles.benefitContent}>
+                    <View style={styles.benefitIconWrapper}>
+                      <Icon size={22} color={benefit.color} strokeWidth={2.2} />
+                    </View>
+                    <Text style={styles.benefitText}>{benefit.title}</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
-          {/* CTA Button */}
-          <TouchableOpacity
-            style={styles.subscribeButton}
-            onPress={handleSubscribe}
-            disabled={isLoading}
-            activeOpacity={0.8}
-          >
-            <LinearGradient
-              colors={isLoading ? [theme.colors.bg.tertiary, theme.colors.bg.tertiary] : theme.colors.gradient.primary}
-              style={styles.subscribeButtonGradient}
+          {/* Bloc Prix - Badge avec glow */}
+          <View style={styles.pricingSection}>
+            <View style={styles.pricingBadge}>
+              <View style={styles.pricingGlow} />
+              <Text style={styles.pricingText}>7,99 € / mois</Text>
+            </View>
+          </View>
+
+          {/* Bouton CTA Premium refait */}
+          <View style={styles.ctaWrapper}>
+            <Animated.View
+              style={[
+                styles.ctaGlow,
+                {
+                  opacity: ctaGlowOpacity,
+                },
+              ]}
+            />
+            <TouchableOpacity
+              onPress={handleActivatePremium}
+              disabled={isLoading}
+              activeOpacity={0.85}
+              style={styles.ctaButton}
             >
-              {isLoading ? (
-                <>
-                  <Ionicons name="hourglass" size={20} color={theme.colors.text.secondary} />
-                  <Text style={styles.subscribeButtonTextDisabled}>Traitement...</Text>
-                </>
-              ) : (
-                <>
-                  <Ionicons name="diamond" size={20} color="white" />
-                  <Text style={styles.subscribeButtonText}>Devenir Pro - 9,99€/mois</Text>
-                </>
-              )}
-            </LinearGradient>
+              <LinearGradient
+                colors={['#C25CFF', '#FF4FF9', '#5AC8FA']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                locations={[0, 0.5, 1]}
+                style={styles.ctaGradient}
+              >
+                {/* Inner shadow pour effet premium */}
+                <View style={styles.ctaInnerShadow} />
+                
+                <View style={styles.ctaContent}>
+                  <Sparkles size={28} color="#FFFFFF" strokeWidth={2.5} />
+                  <Text style={styles.ctaText}>
+                    {isLoading ? 'Chargement...' : 'Activer Viraly Premium'}
+                  </Text>
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+
+          {/* Lien secondaire */}
+          <TouchableOpacity
+            style={styles.alreadyPremiumButton}
+            onPress={handleAlreadyPremium}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.alreadyPremiumText}>
+              Déjà abonné ? Continuer
+            </Text>
           </TouchableOpacity>
 
-          {/* Terms */}
-          <Text style={styles.termsText}>
-            En t'abonnant, tu acceptes nos conditions d'utilisation et notre politique de confidentialité.
-          </Text>
+          {/* Mentions légales */}
+          <View style={styles.termsSection}>
+            <Text style={styles.termsText}>
+              Renouvellement automatique
+            </Text>
+            <Text style={styles.termsText}>
+              Résiliation à tout moment dans les réglages
+            </Text>
+            <Text style={styles.termsText}>
+              Le paiement est débité sur votre compte Apple
+            </Text>
+          </View>
         </Animated.View>
-      </ScrollView>
-    </LinearGradient>
+      </LinearGradient>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#0A0214',
+  },
   container: {
     flex: 1,
   },
-  scrollContent: {
-    flexGrow: 1,
-    paddingBottom: 40,
-  },
   content: {
+    flex: 1,
     paddingHorizontal: 24,
-    paddingTop: 60,
+    paddingTop: 6,
+    paddingBottom: 12,
+    justifyContent: 'space-between',
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 32,
+    justifyContent: 'flex-end',
+    marginBottom: 4,
   },
   closeButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(194, 92, 255, 0.15)',
+  },
+  // Header Section
+  headerSection: {
+    alignItems: 'center',
+    marginBottom: 24,
+    position: 'relative',
+  },
+  // Halo lumineux derrière l'icône
+  iconHaloContainer: {
+    position: 'absolute',
+    top: -70,
+    width: 220,
+    height: 220,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  iconHalo: {
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    backgroundColor: 'rgba(255, 79, 249, 0.18)',
+  },
+  iconGlow: {
+    marginBottom: 8,
+    shadowColor: '#C25CFF',
+    shadowOffset: { width: 0, height: 0 },
+    shadowRadius: 16,
+    shadowOpacity: 0.6,
+    zIndex: 1,
+  },
+  iconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
   },
   title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: theme.colors.text.primary,
-  },
-  placeholder: {
-    width: 40,
-  },
-  heroSection: {
-    alignItems: 'center',
-    marginBottom: 32,
-  },
-  heroIcon: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  heroTitle: {
     fontSize: 28,
-    fontWeight: 'bold',
-    color: theme.colors.text.primary,
-    marginBottom: 12,
+    fontWeight: '800',
+    color: '#FFFFFF',
     textAlign: 'center',
-  },
-  heroSubtitle: {
-    fontSize: 16,
-    color: theme.colors.text.secondary,
-    textAlign: 'center',
-    lineHeight: 24,
-  },
-  pricingCard: {
-    borderRadius: 20,
-    padding: 24,
-    marginBottom: 32,
-    borderWidth: 2,
-    borderColor: theme.colors.primary,
-    alignItems: 'center',
-  },
-  pricingHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  pricingTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: theme.colors.text.primary,
-    marginRight: 12,
-  },
-  pricingBadge: {
-    backgroundColor: theme.colors.primary,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  pricingBadgeText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  pricingAmount: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
+    letterSpacing: -0.6,
     marginBottom: 8,
+    textShadowColor: 'rgba(194, 92, 255, 0.45)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 10,
   },
-  pricingCurrency: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: theme.colors.text.primary,
+  sparkle: {
+    fontSize: 28,
   },
-  pricingValue: {
-    fontSize: 48,
-    fontWeight: 'bold',
-    color: theme.colors.text.primary,
+  // Highlight Bar
+  highlightBar: {
+    width: 160,
+    height: 3,
+    marginBottom: 8,
+    borderRadius: 2,
+    overflow: 'hidden',
+    shadowColor: '#FF4FF9',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 6,
   },
-  pricingPeriod: {
-    fontSize: 18,
-    color: theme.colors.text.secondary,
-    marginLeft: 4,
-  },
-  pricingDescription: {
-    fontSize: 14,
-    color: theme.colors.text.secondary,
-    textAlign: 'center',
-  },
-  featuresContainer: {
-    marginBottom: 32,
-  },
-  featuresTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: theme.colors.text.primary,
-    marginBottom: 20,
-  },
-  feature: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  featureIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  featureContent: {
+  highlightBarGradient: {
     flex: 1,
   },
-  featureTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: theme.colors.text.primary,
-    marginBottom: 4,
-  },
-  featureDescription: {
+  subtitle: {
     fontSize: 14,
-    color: theme.colors.text.secondary,
-    lineHeight: 20,
+    color: '#B8B8C8',
+    textAlign: 'center',
+    fontWeight: '400',
+    lineHeight: 18,
+    paddingHorizontal: 20,
   },
-  subscribeButton: {
+  // Section Avantages - Cartes refaites
+  benefitsSection: {
+    marginBottom: 26,
+  },
+  benefitCard: {
+    height: 54,
+    marginBottom: 12,
+    borderRadius: 26,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    overflow: 'hidden',
+    position: 'relative',
+    shadowColor: 'rgba(194, 92, 255, 0.35)',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  benefitBorder: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 1.5,
+  },
+  benefitContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: '100%',
+    paddingHorizontal: 16,
+  },
+  benefitIconWrapper: {
+    width: 32,
+    height: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  benefitText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    letterSpacing: -0.2,
+    flex: 1,
+    textShadowColor: 'rgba(255, 255, 255, 0.1)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 4,
+  },
+  // Bloc Prix - Badge avec glow
+  pricingSection: {
+    alignItems: 'center',
     marginBottom: 20,
   },
-  subscribeButtonGradient: {
+  pricingBadge: {
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    position: 'relative',
+    overflow: 'visible',
+  },
+  pricingGlow: {
+    position: 'absolute',
+    top: -4,
+    left: -4,
+    right: -4,
+    bottom: -4,
+    borderRadius: 24,
+    backgroundColor: 'rgba(194, 92, 255, 0.35)',
+    opacity: 0.4,
+    zIndex: -1,
+  },
+  pricingText: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: -0.4,
+    textShadowColor: 'rgba(194, 92, 255, 0.5)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 10,
+  },
+  // Bouton CTA Premium refait
+  ctaWrapper: {
+    position: 'relative',
+    marginBottom: 12,
+  },
+  ctaGlow: {
+    position: 'absolute',
+    top: -4,
+    left: -4,
+    right: -4,
+    bottom: -4,
+    borderRadius: 18,
+    backgroundColor: '#C25CFF',
+    opacity: 0.25,
+  },
+  ctaButton: {
+    width: '100%',
+    height: 56,
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#C25CFF',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 14,
+    elevation: 10,
+  },
+  ctaGradient: {
+    flex: 1,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  // Inner shadow pour effet premium
+  ctaInnerShadow: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '40%',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+  },
+  ctaContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-    borderRadius: 25,
+    gap: 12,
+    zIndex: 1,
   },
-  subscribeButtonText: {
-    color: 'white',
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginLeft: 8,
+  ctaText: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
-  subscribeButtonTextDisabled: {
-    color: theme.colors.text.secondary,
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginLeft: 8,
+  // Lien secondaire
+  alreadyPremiumButton: {
+    alignItems: 'center',
+    paddingVertical: 6,
+    marginBottom: 8,
+  },
+  alreadyPremiumText: {
+    fontSize: 13,
+    color: 'rgba(255, 255, 255, 0.5)',
+    fontWeight: '500',
+  },
+  // Mentions légales
+  termsSection: {
+    alignItems: 'center',
+    paddingTop: 4,
   },
   termsText: {
     fontSize: 12,
-    color: theme.colors.text.tertiary,
+    color: 'rgba(255, 255, 255, 0.45)',
     textAlign: 'center',
-    lineHeight: 18,
+    lineHeight: 16,
+    marginBottom: 3,
+    fontWeight: '400',
   },
 });

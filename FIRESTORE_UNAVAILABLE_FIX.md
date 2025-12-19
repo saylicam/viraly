@@ -167,3 +167,11 @@ if (error.code === 'unavailable') {
 Firestore est maintenant correctement configuré pour Expo Go avec gestion optimale des erreurs "unavailable".
 
 
+
+
+
+
+
+
+
+

@@ -177,3 +177,11 @@ Les réponses sont passées via `route.params.answers` depuis `RecommendationScr
 Le flow de navigation suit maintenant exactement les spécifications demandées.
 
 
+
+
+
+
+
+
+
+

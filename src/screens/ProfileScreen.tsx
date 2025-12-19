@@ -1,14 +1,21 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, Animated, Dimensions, TouchableOpacity, ScrollView, Alert, Switch } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
+import { signOut } from 'firebase/auth';
+import { auth } from '../../firebase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import { theme } from '../theme';
 import { logout } from '../services/authService';
 import { useAuth } from '../hooks/useAuth';
+import { ScreenBackground } from '../components/ui/ScreenBackground';
+import { GlassCard } from '../components/ui/GlassCard';
+import { NeonButton } from '../components/ui/NeonButton';
 
 const { width, height } = Dimensions.get('window');
+const FIRST_LAUNCH_KEY = '@viraly_first_launch';
 
 interface ProfileScreenProps {
   navigation: any;
@@ -16,7 +23,9 @@ interface ProfileScreenProps {
 
 export default function ProfileScreen({ navigation }: ProfileScreenProps) {
   const [isLoading, setIsLoading] = useState(false);
-  const { user } = useAuth();
+  const [notifications, setNotifications] = useState(true);
+  const [darkMode, setDarkMode] = useState(true);
+  const { user, setUser } = useAuth();
   
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
@@ -36,22 +45,48 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
     ]).start();
   }, []);
 
-  const handleResetProfile = () => {
-      Alert.alert(
-      'Réinitialiser le profil',
-      'Es-tu sûr de vouloir supprimer ton profil ? Tu devras refaire le questionnaire.',
+  const handleResetProfile = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    Alert.alert(
+      "Réinitialisation Système",
+      "Tu vas effacer ton profil et recommencer l'aventure à zéro. Confirmes-tu ?",
       [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Supprimer',
-            style: 'destructive',
-          onPress: () => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            // Reset profile logic here
-          },
-          },
-        ]
-      );
+        { text: "Annuler", style: "cancel" },
+        { 
+          text: "CONFIRMER LE RESET", 
+          style: "destructive",
+          onPress: async () => {
+            try {
+              // 1. Déconnecter l'utilisateur Firebase (si connecté)
+              if (user && !user.isGuest) {
+                try {
+                  await signOut(auth);
+                } catch (error) {
+                  console.warn('Erreur lors de la déconnexion Firebase:', error);
+                }
+              }
+
+              // 2. Réinitialiser l'utilisateur dans le contexte (supprime guest aussi)
+              setUser(null);
+
+              // 3. Effacer les données AsyncStorage
+              await AsyncStorage.removeItem(FIRST_LAUNCH_KEY);
+
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              
+              // 4. Redémarrer l'app sur la première page (Splash)
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'Splash' }],
+              });
+            } catch (e) {
+              console.error('Erreur lors du reset:', e);
+              Alert.alert("Erreur", "Impossible de réinitialiser.");
+            }
+          }
+        }
+      ]
+    );
   };
 
   const handleUpgrade = () => {
@@ -59,41 +94,46 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
     navigation.navigate('Paywall');
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Alert.alert(
-      'Déconnexion',
-      'Es-tu sûr de vouloir te déconnecter ?',
+      "Déconnexion",
+      "Tu veux te déconnecter ?",
       [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Déconnexion',
-          style: 'destructive',
+        { text: "Annuler", style: "cancel" },
+        { 
+          text: "Déconnexion", 
+          style: "destructive",
           onPress: async () => {
             try {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              await logout();
-              // La redirection vers Login se fait automatiquement via useAuth dans App.tsx
+              // Déconnecter Firebase (si connecté)
+              if (user && !user.isGuest) {
+                await signOut(auth);
+              }
+              
+              // Réinitialiser l'utilisateur
+              setUser(null);
+
+              // Rediriger vers Splash
               navigation.reset({
                 index: 0,
-                routes: [{ name: 'Login' as never }],
+                routes: [{ name: 'Splash' }],
               });
-            } catch (error: any) {
-              Alert.alert('Erreur', error.message || 'Une erreur est survenue lors de la déconnexion');
+            } catch (error) {
+              console.error('Erreur lors de la déconnexion:', error);
+              Alert.alert("Erreur", "Impossible de se déconnecter.");
             }
-          },
-        },
+          }
+        }
       ]
     );
   };
 
   return (
-    <LinearGradient
-      colors={[theme.colors.bg.primary, theme.colors.bg.secondary, theme.colors.bg.primary]}
-      style={styles.container}
-    >
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
+    <ScreenBackground>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
       >
         <Animated.View
           style={[
@@ -106,9 +146,9 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
         >
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.title}>Profil de Créateur</Text>
+            <Text style={styles.title}>Profil</Text>
             <Text style={styles.subtitle}>Gère ton compte et tes préférences</Text>
-                </View>
+          </View>
 
           {/* Profile Card */}
           <BlurView intensity={20} tint="dark" style={styles.profileCard}>
@@ -170,60 +210,114 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
             </TouchableOpacity>
           </BlurView>
 
-          {/* Settings */}
+          {/* Application Settings */}
           <View style={styles.settingsContainer}>
-            <Text style={styles.settingsTitle}>Paramètres</Text>
-            
-            <TouchableOpacity style={styles.settingItem}>
-              <BlurView intensity={15} tint="dark" style={styles.settingCard}>
-                <Ionicons name="notifications-outline" size={20} color={theme.colors.primary} />
-                <Text style={styles.settingText}>Notifications</Text>
-                <Ionicons name="chevron-forward" size={16} color={theme.colors.text.tertiary} />
-              </BlurView>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.settingItem}>
-              <BlurView intensity={15} tint="dark" style={styles.settingCard}>
-                <Ionicons name="shield-outline" size={20} color={theme.colors.secondary} />
-                <Text style={styles.settingText}>Confidentialité</Text>
-                <Ionicons name="chevron-forward" size={16} color={theme.colors.text.tertiary} />
-              </BlurView>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.settingItem}>
-              <BlurView intensity={15} tint="dark" style={styles.settingCard}>
-                <Ionicons name="help-circle-outline" size={20} color={theme.colors.accent} />
-                <Text style={styles.settingText}>Aide & Support</Text>
-                <Ionicons name="chevron-forward" size={16} color={theme.colors.text.tertiary} />
-              </BlurView>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.settingItem} onPress={handleResetProfile}>
-              <BlurView intensity={15} tint="dark" style={styles.settingCard}>
-                <Ionicons name="refresh-outline" size={20} color={theme.colors.error} />
-                <Text style={styles.settingText}>Réinitialiser le profil</Text>
-                <Ionicons name="chevron-forward" size={16} color={theme.colors.text.tertiary} />
-              </BlurView>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.settingItem} onPress={handleLogout}>
-              <BlurView intensity={15} tint="dark" style={styles.settingCard}>
-                <Ionicons name="log-out-outline" size={20} color={theme.colors.error} />
-                <Text style={styles.settingText}>Se déconnecter</Text>
-                <Ionicons name="chevron-forward" size={16} color={theme.colors.text.tertiary} />
-              </BlurView>
-            </TouchableOpacity>
+            <Text style={styles.settingsTitle}>Application</Text>
+            <GlassCard className="px-4 py-2">
+              <View style={styles.settingRow}>
+                <View style={styles.settingLeft}>
+                  <View style={styles.settingIconContainer}>
+                    <Ionicons name="notifications-outline" size={20} color={theme.colors.primary} />
+                  </View>
+                  <Text style={styles.settingText}>Notifications</Text>
+                </View>
+                <Switch
+                  value={notifications}
+                  onValueChange={setNotifications}
+                  trackColor={{ false: '#1E1B3A', true: theme.colors.primary }}
+                  thumbColor={notifications ? '#FFFFFF' : '#71717A'}
+                />
+              </View>
+              <View style={styles.settingRow}>
+                <View style={styles.settingLeft}>
+                  <View style={styles.settingIconContainer}>
+                    <Ionicons name="moon-outline" size={20} color={theme.colors.secondary} />
+                  </View>
+                  <Text style={styles.settingText}>Mode Sombre</Text>
+                </View>
+                <Switch
+                  value={darkMode}
+                  onValueChange={setDarkMode}
+                  trackColor={{ false: '#1E1B3A', true: theme.colors.secondary }}
+                  thumbColor={darkMode ? '#FFFFFF' : '#71717A'}
+                />
+              </View>
+            </GlassCard>
           </View>
+
+          {/* Support Settings */}
+          <View style={styles.settingsContainer}>
+            <Text style={styles.settingsTitle}>Support</Text>
+            <GlassCard className="px-4 py-2">
+              <TouchableOpacity style={styles.settingItem}>
+                <View style={styles.settingLeft}>
+                  <View style={styles.settingIconContainer}>
+                    <Ionicons name="help-circle-outline" size={20} color={theme.colors.accent} />
+                  </View>
+                  <Text style={styles.settingText}>Centre d'aide</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color={theme.colors.text.tertiary} />
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.settingItem}>
+                <View style={styles.settingLeft}>
+                  <View style={styles.settingIconContainer}>
+                    <Ionicons name="shield-outline" size={20} color={theme.colors.warning} />
+                  </View>
+                  <Text style={styles.settingText}>Confidentialité</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color={theme.colors.text.tertiary} />
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.settingItem}>
+                <View style={styles.settingLeft}>
+                  <View style={styles.settingIconContainer}>
+                    <Ionicons name="phone-portrait-outline" size={20} color={theme.colors.text.secondary} />
+                  </View>
+                  <Text style={styles.settingText}>Version App v1.0.2</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color={theme.colors.text.tertiary} />
+              </TouchableOpacity>
+            </GlassCard>
+          </View>
+
+          {/* Danger Zone */}
+          <View style={styles.settingsContainer}>
+            <Text style={styles.dangerTitle}>Zone Critique</Text>
+            <GlassCard variant="highlight" className="p-6">
+              <Text style={styles.dangerSectionTitle}>Réinitialisation</Text>
+              <Text style={styles.dangerDescription}>
+                Si tu souhaites refaire le questionnaire d'onboarding ou recommencer à zéro, utilise cette option.
+              </Text>
+              
+              <NeonButton
+                title="RESET PROFIL & INTRO"
+                onPress={handleResetProfile}
+                fullWidth
+              />
+
+              <View style={{ height: 16 }} />
+
+              <TouchableOpacity 
+                style={styles.logoutButton}
+                onPress={handleLogout}
+              >
+                <Ionicons name="log-out-outline" size={16} color={theme.colors.error} style={{ marginRight: 8 }} />
+                <Text style={styles.logoutText}>Se déconnecter</Text>
+              </TouchableOpacity>
+            </GlassCard>
+          </View>
+
+          <Text style={styles.footerText}>
+            Viraly AI - Build 2024.11.23
+          </Text>
         </Animated.View>
-        </ScrollView>
-    </LinearGradient>
+      </ScrollView>
+    </ScreenBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
   scrollContent: {
     flexGrow: 1,
     paddingBottom: 100,
@@ -237,7 +331,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 32,
-    fontWeight: 'bold',
+    fontWeight: '900',
     color: theme.colors.text.primary,
     marginBottom: 8,
   },
@@ -246,12 +340,13 @@ const styles = StyleSheet.create({
     color: theme.colors.text.secondary,
   },
   profileCard: {
-    borderRadius: 20,
+    borderRadius: 24,
     padding: 24,
     marginBottom: 24,
     borderWidth: 1,
     borderColor: theme.colors.border.primary,
     alignItems: 'center',
+    overflow: 'hidden',
   },
   avatar: {
     width: 80,
@@ -267,11 +362,6 @@ const styles = StyleSheet.create({
     color: theme.colors.text.primary,
     marginBottom: 4,
   },
-  profileEmail: {
-    fontSize: 14,
-    color: theme.colors.text.secondary,
-    marginBottom: 8,
-  },
   profileType: {
     fontSize: 16,
     color: theme.colors.primary,
@@ -284,15 +374,16 @@ const styles = StyleSheet.create({
   statsContainer: {
     flexDirection: 'row',
     marginBottom: 24,
+    gap: 12,
   },
   statCard: {
     flex: 1,
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 16,
-    marginHorizontal: 4,
     borderWidth: 1,
     borderColor: theme.colors.border.primary,
     alignItems: 'center',
+    overflow: 'hidden',
   },
   statValue: {
     fontSize: 24,
@@ -307,11 +398,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   subscriptionCard: {
-    borderRadius: 16,
+    borderRadius: 24,
     padding: 20,
     marginBottom: 24,
     borderWidth: 1,
     borderColor: theme.colors.border.primary,
+    overflow: 'hidden',
   },
   subscriptionHeader: {
     flexDirection: 'row',
@@ -337,6 +429,8 @@ const styles = StyleSheet.create({
   },
   upgradeButton: {
     width: '100%',
+    borderRadius: 20,
+    overflow: 'hidden',
   },
   upgradeButtonGradient: {
     flexDirection: 'row',
@@ -356,33 +450,86 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   settingsTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: theme.colors.text.primary,
-    marginBottom: 16,
-  },
-  settingItem: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: theme.colors.text.secondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
     marginBottom: 12,
+    marginLeft: 8,
   },
-  settingCard: {
+  dangerTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: theme.colors.error,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 12,
+    marginLeft: 8,
+  },
+  settingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: theme.colors.border.primary,
+    justifyContent: 'space-between',
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  settingItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  settingLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  settingIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
   },
   settingText: {
-    flex: 1,
     fontSize: 16,
+    fontWeight: '600',
     color: theme.colors.text.primary,
-    marginLeft: 12,
+  },
+  dangerSectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: theme.colors.text.primary,
+    marginBottom: 8,
+  },
+  dangerDescription: {
+    fontSize: 14,
+    color: theme.colors.text.secondary,
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+  },
+  logoutText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: theme.colors.error,
+  },
+  footerText: {
+    textAlign: 'center',
+    color: 'rgba(255, 255, 255, 0.2)',
+    fontSize: 12,
+    marginTop: 32,
+    marginBottom: 16,
   },
 });
-
-
-
-
-
-
-

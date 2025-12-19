@@ -21,9 +21,19 @@ import AnalysisResultScreen from '../screens/AnalysisResultScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import PaywallScreen from '../screens/PaywallScreen';
+import CalendarScreen from '../screens/Calendar/CalendarScreen';
 
 import { theme } from '../theme';
 import { ProtectedScreen } from '../components/ProtectedScreen';
+
+// Wrapper pour AnalyzeScreen avec le bon fond
+const AnalyzeScreenWrapper = (props: any) => {
+  return (
+    <View style={{ flex: 1, backgroundColor: '#0A0214' }}>
+      <AnalyzeScreen {...props} />
+    </View>
+  );
+};
 
 export type RootStackParamList = {
   Intro: undefined;
@@ -38,15 +48,14 @@ export type RootStackParamList = {
   VideoAnalyzing: { videoUri: string };
   AnalysisResult: { videoUri: string; result: any };
   Profile: undefined;
-  Settings: undefined;
   Paywall: undefined;
 };
 
 export type MainTabParamList = {
   Timeline: undefined;
   Analyze: undefined;
+  Calendar: undefined;
   Profile: undefined;
-  Settings: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -100,11 +109,21 @@ function MainTabs() {
       />
       <Tab.Screen
         name="Analyze"
-        component={AnalyzeScreen}
+        component={AnalyzeScreenWrapper}
         options={{
           tabBarLabel: 'Analyser',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="analytics-outline" color={color} size={size} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="Calendar"
+        component={CalendarScreen}
+        options={{
+          tabBarLabel: 'Calendrier',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="calendar-outline" color={color} size={size} />
           ),
         }}
       />
@@ -115,16 +134,6 @@ function MainTabs() {
           tabBarLabel: 'Profil',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="person-outline" color={color} size={size} />
-          ),
-        }}
-      />
-      <Tab.Screen
-        name="Settings"
-        component={SettingsScreen}
-        options={{
-          tabBarLabel: 'Réglages',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="settings-outline" color={color} size={size} />
           ),
         }}
       />

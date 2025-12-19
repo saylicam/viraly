@@ -5,7 +5,6 @@ import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { ChevronDown } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
-import { theme } from '../theme';
 import { ScreenBackground } from '../components/ui/ScreenBackground';
 import { NeonButton } from '../components/ui/NeonButton';
 import { useAuth } from '../hooks/useAuth';
@@ -21,7 +20,13 @@ interface Step {
   title: string;
   subtitle?: string;
   multi?: boolean;
-  options: { key: string; label: string; icon?: keyof typeof Ionicons.glyphMap; sub?: string; gradient?: string[] }[];
+  options: { 
+    key: string; 
+    label: string; 
+    icon?: keyof typeof Ionicons.glyphMap; 
+    sub?: string; 
+    gradient?: string[];
+  }[];
 }
 
 const STEPS: Step[] = [
@@ -35,28 +40,28 @@ const STEPS: Step[] = [
         label: 'Débutant·e', 
         icon: 'phone-portrait-outline', 
         sub: 'Je débute',
-        gradient: ['#8F5BFF', '#D946EF'],
+        gradient: ['#7B33F7', '#FF4FF9'], // Violet / fuchsia
       },
       { 
         key: 'intermediate', 
         label: 'Intermédiaire', 
         icon: 'camera-outline', 
         sub: 'Moins de 10K vues',
-        gradient: ['#D946EF', '#8F5BFF'],
+        gradient: ['#FF4FF9', '#B371FF'], // Rose / violet clair
       },
       { 
         key: 'advanced', 
         label: 'Avancé·e', 
         icon: 'videocam-outline', 
         sub: '10K à 50K vues',
-        gradient: ['#8F5BFF', '#6EE7FF'],
+        gradient: ['#4FC3FF', '#7B33F7'], // Bleu / violet
       },
       { 
         key: 'pro', 
         label: 'Pro', 
         icon: 'trophy-outline', 
         sub: 'Plus de 50K vues',
-        gradient: ['#6EE7FF', '#8F5BFF'],
+        gradient: ['#FF4FF9', '#FF5DF5'], // Rose / magenta
       },
     ],
   },
@@ -65,10 +70,30 @@ const STEPS: Step[] = [
     title: 'À quelle fréquence publies-tu ?',
     subtitle: 'Pour calibrer ton calendrier intelligent',
     options: [
-      { key: '1week', label: '1 fois par semaine', icon: 'calendar-outline', gradient: ['#8F5BFF', '#D946EF'] },
-      { key: '2week', label: '2 à 3 fois par semaine', icon: 'calendar-outline', gradient: ['#D946EF', '#8F5BFF'] },
-      { key: 'daily', label: 'Tous les jours', icon: 'calendar-outline', gradient: ['#8F5BFF', '#6EE7FF'] },
-      { key: 'irregular', label: 'Irrégulièrement', icon: 'calendar-outline', gradient: ['#6EE7FF', '#8F5BFF'] },
+      { 
+        key: '1week', 
+        label: '1 fois par semaine', 
+        icon: 'calendar-outline',
+        gradient: ['#7B33F7', '#FF4FF9'],
+      },
+      { 
+        key: '2week', 
+        label: '2 à 3 fois par semaine', 
+        icon: 'calendar-outline',
+        gradient: ['#FF4FF9', '#B371FF'],
+      },
+      { 
+        key: 'daily', 
+        label: 'Tous les jours', 
+        icon: 'calendar-outline',
+        gradient: ['#4FC3FF', '#7B33F7'],
+      },
+      { 
+        key: 'irregular', 
+        label: 'Irrégulièrement', 
+        icon: 'calendar-outline',
+        gradient: ['#B371FF', '#FF4FF9'],
+      },
     ],
   },
   {
@@ -77,15 +102,60 @@ const STEPS: Step[] = [
     subtitle: 'Choisis tes niches principales',
     multi: true,
     options: [
-      { key: 'comedy', label: 'Comédie', icon: 'happy-outline', gradient: ['#8F5BFF', '#D946EF'] },
-      { key: 'music', label: 'Musique', icon: 'musical-notes-outline', gradient: ['#D946EF', '#8F5BFF'] },
-      { key: 'beauty', label: 'Beauté', icon: 'sparkles-outline', gradient: ['#8F5BFF', '#6EE7FF'] },
-      { key: 'education', label: 'Éducation', icon: 'school-outline', gradient: ['#6EE7FF', '#8F5BFF'] },
-      { key: 'gaming', label: 'Gaming', icon: 'game-controller-outline', gradient: ['#8F5BFF', '#D946EF'] },
-      { key: 'fitness', label: 'Fitness', icon: 'fitness-outline', gradient: ['#D946EF', '#8F5BFF'] },
-      { key: 'tech', label: 'Tech', icon: 'hardware-chip-outline', gradient: ['#8F5BFF', '#6EE7FF'] },
-      { key: 'food', label: 'Cuisine', icon: 'restaurant-outline', gradient: ['#6EE7FF', '#8F5BFF'] },
-      { key: 'travel', label: 'Voyages', icon: 'airplane-outline', gradient: ['#8F5BFF', '#D946EF'] },
+      { 
+        key: 'comedy', 
+        label: 'Comédie', 
+        icon: 'happy-outline',
+        gradient: ['#7B33F7', '#FF4FF9'],
+      },
+      { 
+        key: 'music', 
+        label: 'Musique', 
+        icon: 'musical-notes-outline',
+        gradient: ['#FF4FF9', '#B371FF'],
+      },
+      { 
+        key: 'beauty', 
+        label: 'Beauté', 
+        icon: 'sparkles-outline',
+        gradient: ['#4FC3FF', '#7B33F7'],
+      },
+      { 
+        key: 'education', 
+        label: 'Éducation', 
+        icon: 'school-outline',
+        gradient: ['#FF4FF9', '#FF5DF5'],
+      },
+      { 
+        key: 'gaming', 
+        label: 'Gaming', 
+        icon: 'game-controller-outline',
+        gradient: ['#7B33F7', '#B371FF'],
+      },
+      { 
+        key: 'fitness', 
+        label: 'Fitness', 
+        icon: 'fitness-outline',
+        gradient: ['#4FC3FF', '#FF4FF9'],
+      },
+      { 
+        key: 'tech', 
+        label: 'Tech', 
+        icon: 'hardware-chip-outline',
+        gradient: ['#B371FF', '#7B33F7'],
+      },
+      { 
+        key: 'food', 
+        label: 'Cuisine', 
+        icon: 'restaurant-outline',
+        gradient: ['#FF4FF9', '#B371FF'],
+      },
+      { 
+        key: 'travel', 
+        label: 'Voyages', 
+        icon: 'airplane-outline',
+        gradient: ['#4FC3FF', '#B371FF'],
+      },
     ],
   },
   {
@@ -93,16 +163,40 @@ const STEPS: Step[] = [
     title: 'Quel est ton objectif principal ?',
     subtitle: 'Ce qui te motive le plus',
     options: [
-      { key: 'views', label: 'Augmenter mes vues', icon: 'eye-outline', sub: 'Plus de visibilité', gradient: ['#8F5BFF', '#D946EF'] },
-      { key: 'engagement', label: "Booster l'engagement", icon: 'heart-outline', sub: "Plus d'interactions", gradient: ['#D946EF', '#8F5BFF'] },
-      { key: 'fanbase', label: 'Construire ma communauté', icon: 'people-outline', sub: 'Plus de followers', gradient: ['#8F5BFF', '#6EE7FF'] },
-      { key: 'monetization', label: 'Monétiser mon contenu', icon: 'cash-outline', sub: 'Générer des revenus', gradient: ['#6EE7FF', '#8F5BFF'] },
+      { 
+        key: 'views', 
+        label: 'Augmenter mes vues', 
+        icon: 'eye-outline', 
+        sub: 'Plus de visibilité',
+        gradient: ['#7B33F7', '#FF4FF9'],
+      },
+      { 
+        key: 'engagement', 
+        label: "Booster l'engagement", 
+        icon: 'heart-outline', 
+        sub: "Plus d'interactions",
+        gradient: ['#FF4FF9', '#B371FF'],
+      },
+      { 
+        key: 'fanbase', 
+        label: 'Construire ma communauté', 
+        icon: 'people-outline', 
+        sub: 'Plus de followers',
+        gradient: ['#4FC3FF', '#7B33F7'],
+      },
+      { 
+        key: 'monetization', 
+        label: 'Monétiser mon contenu', 
+        icon: 'cash-outline', 
+        sub: 'Générer des revenus',
+        gradient: ['#FF4FF9', '#FF5DF5'],
+      },
     ],
   },
 ];
 
 export default function QuestionnaireScreen({ navigation }: QuestionnaireScreenProps) {
-  const { user } = useAuth(); // Vérifier si user est connecté
+  const { user } = useAuth();
   const [currentStep, setCurrentStep] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
   const [isLoading, setIsLoading] = useState(false);
@@ -127,7 +221,6 @@ export default function QuestionnaireScreen({ navigation }: QuestionnaireScreenP
       }),
     ]).start();
 
-    // Animation du hint de scroll
     if (showScrollHint) {
       Animated.loop(
         Animated.sequence([
@@ -145,7 +238,6 @@ export default function QuestionnaireScreen({ navigation }: QuestionnaireScreenP
       ).start();
     }
 
-    // Cacher le hint après scroll
     const listener = scrollY.addListener(({ value }) => {
       if (value > 50) {
         setShowScrollHint(false);
@@ -193,8 +285,6 @@ export default function QuestionnaireScreen({ navigation }: QuestionnaireScreenP
     
     await new Promise(resolve => setTimeout(resolve, 1000));
     
-    // Rediriger vers Calculating (écran de génération du plan)
-    // Calculating redirigera automatiquement vers Recommendation
     navigation.navigate('Calculating', { answers });
   };
 
@@ -202,7 +292,6 @@ export default function QuestionnaireScreen({ navigation }: QuestionnaireScreenP
   const isStepComplete = answers[currentStepData.key]?.length > 0;
   const progress = ((currentStep + 1) / STEPS.length) * 100;
 
-  // Gradient fade en bas
   const gradientOpacity = scrollY.interpolate({
     inputRange: [0, 100],
     outputRange: [1, 0],
@@ -215,7 +304,21 @@ export default function QuestionnaireScreen({ navigation }: QuestionnaireScreenP
   });
 
   return (
-    <ScreenBackground variant="minimal">
+    <View style={styles.container}>
+      {/* Fond gradient premium mauve-bleuté */}
+      <LinearGradient
+        colors={['#0E001A', '#150027', '#1B0033']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
+      />
+      
+      {/* Halos / Blobs subtils pour profondeur */}
+      <View style={styles.blobsContainer}>
+        <View style={[styles.blob1, { backgroundColor: 'rgba(123, 51, 247, 0.12)' }]} />
+        <View style={[styles.blob2, { backgroundColor: 'rgba(79, 195, 255, 0.1)' }]} />
+      </View>
+
       {/* Progress Bar */}
       <View style={styles.progressContainer}>
         <View style={styles.progressBar}>
@@ -234,6 +337,8 @@ export default function QuestionnaireScreen({ navigation }: QuestionnaireScreenP
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        fadingEdgeLength={0}
+        overScrollMode="never"
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { y: scrollY } } }],
           { useNativeDriver: false }
@@ -257,61 +362,77 @@ export default function QuestionnaireScreen({ navigation }: QuestionnaireScreenP
             )}
           </View>
 
-          {/* Options - Cartes COMPACTES */}
+          {/* Options - Cartes premium compactes */}
           <View style={styles.optionsContainer}>
             {currentStepData.options.map((option, index) => {
               const isSelected = answers[currentStepData.key]?.includes(option.key);
-              const gradient = option.gradient || ['#8F5BFF', '#D946EF'];
+              const gradient = option.gradient || ['#7B33F7', '#FF4FF9'];
               
               return (
                 <TouchableOpacity
                   key={option.key}
                   activeOpacity={0.85}
                   onPress={() => handleOptionSelect(currentStepData.key, option.key)}
-                  style={[
+                  style={styles.optionCardWrapper}
+                >
+                  <View style={[
                     styles.optionCard,
                     isSelected && styles.optionCardSelected,
-                  ]}
-                >
-                  <BlurView intensity={20} tint="dark" style={styles.optionCardBlur}>
-                    {option.icon && (
-                      <LinearGradient
-                        colors={gradient}
-                        style={styles.optionIcon}
-                      >
-                        <Ionicons
-                          name={option.icon}
-                          size={18} // Réduit de 24
-                          color="white"
-                        />
-                      </LinearGradient>
-                    )}
-                    <View style={styles.optionTextContainer}>
-                      <Text style={[
-                        styles.optionLabel,
-                        isSelected && styles.optionLabelSelected
-                      ]}>
-                        {option.label}
-                      </Text>
-                      {option.sub && (
-                        <Text style={[
-                          styles.optionSub,
-                          isSelected && styles.optionSubSelected
-                        ]}>
-                          {option.sub}
-                        </Text>
+                  ]}>
+                    <View style={styles.optionCardBackground} />
+                    <LinearGradient
+                      colors={isSelected 
+                        ? ['rgba(123, 51, 247, 0.15)', 'rgba(255, 79, 249, 0.1)']
+                        : ['rgba(255, 255, 255, 0.03)', 'rgba(255, 255, 255, 0.06)']
+                      }
+                      style={styles.optionCardGradient}
+                    >
+                      {option.icon && (
+                        <View style={styles.optionIconContainer}>
+                          <LinearGradient
+                            colors={gradient}
+                            style={styles.optionIcon}
+                          >
+                            <Ionicons
+                              name={option.icon}
+                              size={22}
+                              color="white"
+                            />
+                          </LinearGradient>
+                        </View>
                       )}
-                    </View>
-                    {isSelected && (
-                      <View style={styles.checkmarkContainer}>
-                        <Ionicons
-                          name="checkmark-circle"
-                          size={22} // Réduit de 28
-                          color={gradient[0]}
-                        />
+                      <View style={styles.optionTextContainer}>
+                        <Text style={[
+                          styles.optionLabel,
+                          isSelected && styles.optionLabelSelected
+                        ]}>
+                          {option.label}
+                        </Text>
+                        {option.sub && (
+                          <Text style={[
+                            styles.optionSub,
+                            isSelected && styles.optionSubSelected
+                          ]}>
+                            {option.sub}
+                          </Text>
+                        )}
                       </View>
-                    )}
-                  </BlurView>
+                      {isSelected && (
+                        <View style={styles.checkmarkContainer}>
+                          <LinearGradient
+                            colors={gradient}
+                            style={styles.checkmarkGradient}
+                          >
+                            <Ionicons
+                              name="checkmark"
+                              size={16}
+                              color="white"
+                            />
+                          </LinearGradient>
+                        </View>
+                      )}
+                    </LinearGradient>
+                  </View>
                 </TouchableOpacity>
               );
             })}
@@ -337,165 +458,242 @@ export default function QuestionnaireScreen({ navigation }: QuestionnaireScreenP
         </Animated.View>
       </ScrollView>
 
-      {/* Gradient fade en bas */}
-      <Animated.View
-        style={[
-          styles.bottomGradient,
-          { opacity: gradientOpacity }
-        ]}
-        pointerEvents="none"
-      >
-        <LinearGradient
-          colors={['transparent', 'rgba(15, 5, 29, 0.8)']}
-          style={StyleSheet.absoluteFillObject}
-        />
-      </Animated.View>
-
-      {/* Bouton Sticky en bas */}
+      {/* Bouton Sticky en bas - Style premium néon - Zone fixe sans overlay */}
       <View style={styles.stickyButtonContainer}>
-        <BlurView intensity={30} tint="dark" style={styles.stickyButtonBlur}>
-          <NeonButton
-            title={isLoading ? 'Chargement...' : currentStep === STEPS.length - 1 ? 'Terminer' : 'Continuer'}
-            onPress={handleNext}
-            size="large"
-            fullWidth
-            disabled={!isStepComplete || isLoading}
-          />
-        </BlurView>
+        <TouchableOpacity
+          onPress={handleNext}
+          disabled={!isStepComplete || isLoading}
+          activeOpacity={0.85}
+          style={styles.stickyButtonTouchable}
+        >
+          <LinearGradient
+            colors={['#7B33F7', '#FF4FF9']}
+            style={styles.stickyButtonGradient}
+          >
+            <Text style={styles.stickyButtonText}>
+              {isLoading ? 'Chargement...' : currentStep === STEPS.length - 1 ? 'Terminer' : 'Continuer'}
+            </Text>
+          </LinearGradient>
+        </TouchableOpacity>
       </View>
-    </ScreenBackground>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#0E001A',
+  },
+  blobsContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    overflow: 'hidden',
+  },
+  blob1: {
+    position: 'absolute',
+    width: 400,
+    height: 400,
+    borderRadius: 200,
+    top: -100,
+    right: -100,
+    opacity: 0.12,
+  },
+  blob2: {
+    position: 'absolute',
+    width: 350,
+    height: 350,
+    borderRadius: 175,
+    bottom: -50,
+    left: -50,
+    opacity: 0.1,
+  },
   progressContainer: {
-    paddingHorizontal: 24,
+    paddingHorizontal: 22,
     paddingTop: 60,
-    paddingBottom: 16, // Réduit de 20
+    paddingBottom: 16,
+    zIndex: 1,
   },
   progressBar: {
-    height: 4, // Réduit de 6
+    height: 4,
     backgroundColor: 'rgba(255, 255, 255, 0.08)',
     borderRadius: 2,
-    marginBottom: 8, // Réduit de 12
+    marginBottom: 8,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#8F5BFF',
+    backgroundColor: '#B371FF',
     borderRadius: 2,
+    overflow: 'hidden',
   },
   progressText: {
-    color: '#94A3B8',
-    fontSize: 13, // Réduit de 14
+    color: '#EAEAEA',
+    fontSize: 12,
     textAlign: 'right',
     fontWeight: '600',
+    opacity: 0.8,
   },
   scrollContent: {
     flexGrow: 1,
-    paddingBottom: 120, // Espace pour le bouton sticky
+    paddingBottom: 120,
   },
   content: {
     flex: 1,
-    paddingHorizontal: 24,
+    paddingHorizontal: 22,
     paddingBottom: 20,
   },
   questionContainer: {
-    marginBottom: 24, // Réduit de 32
+    marginBottom: 24,
   },
   questionTitle: {
-    fontSize: 26, // Réduit de 28
-    fontWeight: '700',
+    fontSize: 24,
+    fontWeight: '800',
     color: '#FFFFFF',
-    marginBottom: 8, // Réduit de 12
+    marginBottom: 8,
     textAlign: 'center',
-    lineHeight: 34,
+    lineHeight: 32,
+    letterSpacing: 0.2,
   },
   questionSubtitle: {
-    fontSize: 15, // Réduit de 16
-    color: '#94A3B8',
+    fontSize: 14,
+    color: '#EAEAEA',
     textAlign: 'center',
-    lineHeight: 22,
+    lineHeight: 20,
+    opacity: 0.85,
   },
   optionsContainer: {
     flex: 1,
-    gap: 12, // Réduit de 16
-    marginBottom: 24,
+    gap: 12,
+    marginBottom: 20,
+  },
+  optionCardWrapper: {
+    borderRadius: 22,
+    overflow: 'hidden',
   },
   optionCard: {
-    marginBottom: 0,
+    borderRadius: 22,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(179, 113, 255, 0.35)',
+    shadowColor: '#7B33F7',
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
+    position: 'relative',
   },
   optionCardSelected: {
-    borderWidth: 1.5, // Plus fin
-    borderColor: '#8F5BFF',
-    borderRadius: 24,
+    borderWidth: 1.4,
+    borderColor: 'rgba(179, 113, 255, 0.6)',
+    shadowColor: '#B371FF',
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    elevation: 10,
   },
-  optionCardBlur: {
-    borderRadius: 24,
-    padding: 16, // Réduit de 20
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.07)',
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+  optionCardBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+  },
+  optionCardGradient: {
+    padding: 16,
     flexDirection: 'row',
     alignItems: 'center',
   },
+  optionIconContainer: {
+    marginRight: 14,
+  },
   optionIcon: {
-    width: 40, // Réduit de 48
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 14, // Réduit de 16
+    shadowColor: '#B371FF',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 4,
   },
   optionTextContainer: {
     flex: 1,
   },
   optionLabel: {
-    fontSize: 16, // Réduit de 18
+    fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
-    marginBottom: 3, // Réduit de 4
+    marginBottom: 2,
   },
   optionLabelSelected: {
-    color: '#8F5BFF',
+    color: '#B371FF',
+    fontWeight: '700',
   },
   optionSub: {
-    fontSize: 13, // Réduit de 14
-    color: '#94A3B8',
+    fontSize: 12,
+    color: '#EAEAEA',
+    opacity: 0.7,
   },
   optionSubSelected: {
-    color: '#A78BFA',
+    color: '#FF4FF9',
+    opacity: 0.9,
   },
   checkmarkContainer: {
-    marginLeft: 10, // Réduit de 12
+    marginLeft: 10,
+  },
+  checkmarkGradient: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#B371FF',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 4,
   },
   scrollHint: {
     alignItems: 'center',
     marginTop: 8,
     marginBottom: 16,
   },
-  bottomGradient: {
-    position: 'absolute',
-    bottom: 100,
-    left: 0,
-    right: 0,
-    height: 100,
-    pointerEvents: 'none',
-  },
   stickyButtonContainer: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    paddingHorizontal: 24,
+    paddingHorizontal: 22,
     paddingBottom: 20,
-    paddingTop: 12,
+    paddingTop: 16,
+    backgroundColor: 'transparent',
+    zIndex: 10,
   },
-  stickyButtonBlur: {
-    borderRadius: 24,
-    padding: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    backgroundColor: 'rgba(15, 5, 29, 0.8)',
+  stickyButtonTouchable: {
+    width: '100%',
+    borderRadius: 30,
+    overflow: 'hidden',
+  },
+  stickyButtonGradient: {
+    borderRadius: 30,
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#7B33F7',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  stickyButtonText: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '700',
   },
 });
