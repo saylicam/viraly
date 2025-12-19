@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, Animated, TouchableOpacity, SafeAreaView, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, Animated, TouchableOpacity, SafeAreaView, Dimensions, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Sparkles, Zap, Target, TrendingUp, BarChart3, X } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
+import { useRevenueCat } from '../context/RevenueCatContext';
 
 const { width } = Dimensions.get('window');
 
@@ -40,10 +41,26 @@ const BENEFITS = [
 
 export default function PaywallScreen({ navigation }: PaywallScreenProps) {
   const [isLoading, setIsLoading] = useState(false);
+  const { 
+    monthlyPackage, 
+    monthlyPrice, 
+    purchasePackage, 
+    restorePurchases, 
+    isPremium,
+    isLoading: revenueCatLoading 
+  } = useRevenueCat();
   
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const glowAnim = useRef(new Animated.Value(0.5)).current;
   const ctaGlowAnim = useRef(new Animated.Value(0.5)).current;
+
+  // Vérifier si l'utilisateur est déjà premium et rediriger
+  useEffect(() => {
+    if (isPremium) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      navigation.goBack();
+    }
+  }, [isPremium, navigation]);
 
   useEffect(() => {
     Animated.timing(fadeAnim, {
@@ -98,24 +115,74 @@ export default function PaywallScreen({ navigation }: PaywallScreenProps) {
   };
 
   const handleActivatePremium = async () => {
+    if (!monthlyPackage) {
+      Alert.alert(
+        'Erreur',
+        'Le package d\'abonnement n\'est pas disponible. Veuillez réessayer plus tard.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     setIsLoading(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      await purchasePackage(monthlyPackage);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      // TODO: Intégrer RevenueCat ici
-      navigation.goBack();
-    } catch (error) {
+      
+      // L'effet useEffect détectera le changement de isPremium et redirigera
+      // Si ce n'est pas le cas, rediriger manuellement après un court délai
+      setTimeout(() => {
+        if (isPremium) {
+          navigation.goBack();
+        }
+      }, 500);
+    } catch (error: any) {
       console.error('Erreur lors de l\'abonnement:', error);
+      
+      // Ne pas afficher d'alerte si l'utilisateur a annulé
+      if (error.message && error.message.includes('annulé')) {
+        return;
+      }
+      
+      Alert.alert(
+        'Erreur d\'achat',
+        error.message || 'Une erreur est survenue lors de l\'achat. Veuillez réessayer.',
+        [{ text: 'OK' }]
+      );
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleAlreadyPremium = () => {
+  const handleAlreadyPremium = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    navigation.goBack();
+    
+    try {
+      setIsLoading(true);
+      await restorePurchases();
+      
+      if (isPremium) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        navigation.goBack();
+      } else {
+        Alert.alert(
+          'Aucun achat trouvé',
+          'Aucun abonnement actif n\'a été trouvé sur votre compte.',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error) {
+      console.error('Erreur lors de la restauration:', error);
+      Alert.alert(
+        'Erreur',
+        'Une erreur est survenue lors de la restauration. Veuillez réessayer.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const glowOpacity = glowAnim.interpolate({
@@ -236,7 +303,9 @@ export default function PaywallScreen({ navigation }: PaywallScreenProps) {
           <View style={styles.pricingSection}>
             <View style={styles.pricingBadge}>
               <View style={styles.pricingGlow} />
-              <Text style={styles.pricingText}>7,99 € / mois</Text>
+              <Text style={styles.pricingText}>
+                {revenueCatLoading ? 'Chargement...' : monthlyPrice ? `${monthlyPrice} / mois` : '7,99 € / mois'}
+              </Text>
             </View>
           </View>
 
@@ -252,7 +321,7 @@ export default function PaywallScreen({ navigation }: PaywallScreenProps) {
             />
             <TouchableOpacity
               onPress={handleActivatePremium}
-              disabled={isLoading}
+              disabled={isLoading || revenueCatLoading || !monthlyPackage}
               activeOpacity={0.85}
               style={styles.ctaButton}
             >
@@ -269,7 +338,7 @@ export default function PaywallScreen({ navigation }: PaywallScreenProps) {
                 <View style={styles.ctaContent}>
                   <Sparkles size={28} color="#FFFFFF" strokeWidth={2.5} />
                   <Text style={styles.ctaText}>
-                    {isLoading ? 'Chargement...' : 'Activer Viraly Premium'}
+                    {isLoading || revenueCatLoading ? 'Chargement...' : 'Activer Viraly Premium'}
                   </Text>
                 </View>
               </LinearGradient>

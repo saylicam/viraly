@@ -18,6 +18,10 @@ module.exports = () => {
       ios: {
         supportsTablet: true,
         bundleIdentifier: "com.viraly.app",
+        // Configuration requise pour valider le chiffrement chez Apple
+        infoPlist: {
+          ITSAppUsesNonExemptEncryption: false
+        }
       },
 
       android: {
@@ -33,10 +37,13 @@ module.exports = () => {
         "expo-camera",
         "expo-media-library",
         "expo-apple-authentication",
-        "expo-web-browser",          // ← Plugin ajouté ici
+        "expo-web-browser"
       ],
 
       extra: {
+        eas: {
+          projectId: "33fbc0f6-46a7-4b72-a972-905d48581c11"
+        },
         apiUrl: "http://192.168.0.12:3333",
         googleClientId: "453062794883-3a7vsltfbn8km4fejtcelh5m2uakuti1.apps.googleusercontent.com",
         redirectUrl: "https://auth.expo.dev/@maloxi/viraly",
@@ -55,12 +62,3 @@ module.exports = () => {
     }
   };
 };
-
-
-
-
-
-
-
-
-
