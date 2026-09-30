@@ -14,7 +14,7 @@ import {
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { registerWithEmail, loginWithEmail } from '../services/authService';
+import { registerWithEmail, loginWithEmail, resetPassword } from '../services/authService';
 import { theme } from '../theme';
 import * as Haptics from 'expo-haptics';
 
@@ -37,12 +37,14 @@ export const EmailAuthModal: React.FC<EmailAuthModalProps> = ({
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
 
   const resetForm = () => {
     setEmail('');
     setPassword('');
     setConfirmPassword('');
     setError(null);
+    setInfo(null);
   };
 
   const handleClose = () => {
@@ -143,9 +145,43 @@ export const EmailAuthModal: React.FC<EmailAuthModalProps> = ({
     }
   };
 
+  const handleForgotPassword = async () => {
+    setError(null);
+    setInfo(null);
+
+    if (!email.trim() || !validateEmail(email.trim())) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      setError("Entre d'abord ton adresse email ci-dessus, puis appuie sur « Mot de passe oublié ? »");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await resetPassword(email.trim());
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setInfo(
+        `Si un compte existe pour ${email.trim()}, tu vas recevoir un e-mail avec un lien pour choisir un nouveau mot de passe. Pense à vérifier tes spams.`
+      );
+    } catch (err: any) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      if (err.code === 'auth/invalid-email') {
+        setError('Adresse email invalide');
+      } else if (err.code === 'auth/too-many-requests') {
+        setError('Trop de tentatives. Réessaie dans quelques minutes.');
+      } else if (err.code === 'auth/network-request-failed') {
+        setError('Pas de connexion internet. Réessaie.');
+      } else {
+        setError("Impossible d'envoyer l'e-mail pour le moment. Réessaie plus tard.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const switchMode = () => {
     setMode(mode === 'login' ? 'register' : 'login');
     setError(null);
+    setInfo(null);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
@@ -226,6 +262,18 @@ export const EmailAuthModal: React.FC<EmailAuthModalProps> = ({
                 </BlurView>
               </View>
 
+              {/* Mot de passe oublié (Login only) */}
+              {mode === 'login' && (
+                <TouchableOpacity
+                  onPress={handleForgotPassword}
+                  disabled={loading}
+                  style={styles.forgotButton}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={styles.forgotText}>Mot de passe oublié ?</Text>
+                </TouchableOpacity>
+              )}
+
               {/* Confirm Password (Register only) */}
               {mode === 'register' && (
                 <View style={styles.inputContainer}>
@@ -258,6 +306,14 @@ export const EmailAuthModal: React.FC<EmailAuthModalProps> = ({
                     color={theme.colors.error}
                   />
                   <Text style={styles.errorText}>{error}</Text>
+                </View>
+              )}
+
+              {/* Info Message (ex: e-mail de réinitialisation envoyé) */}
+              {info && (
+                <View style={styles.infoContainer}>
+                  <Ionicons name="mail-outline" size={20} color={theme.colors.success} />
+                  <Text style={styles.infoText}>{info}</Text>
                 </View>
               )}
 
@@ -383,6 +439,33 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     color: theme.colors.error,
+    lineHeight: 20,
+  },
+  forgotButton: {
+    alignSelf: 'flex-end',
+    marginTop: -8,
+    marginBottom: 16,
+  },
+  forgotText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: theme.colors.primary,
+  },
+  infoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: 'rgba(52, 211, 153, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(52, 211, 153, 0.3)',
+    borderRadius: 12,
+    gap: 8,
+    marginBottom: 8,
+  },
+  infoText: {
+    flex: 1,
+    fontSize: 14,
+    color: theme.colors.text.primary,
     lineHeight: 20,
   },
   submitButton: {

@@ -45,8 +45,8 @@ module.exports = () => {
           projectId: "33fbc0f6-46a7-4b72-a972-905d48581c11"
         },
         apiUrl: "http://192.168.0.12:3333",
-        googleClientId: "453062794883-3a7vsltfbn8km4fejtcelh5m2uakuti1.apps.googleusercontent.com",
-        redirectUrl: "https://auth.expo.dev/@maloxi/viraly",
+        // Client OAuth iOS du projet Firebase viraly-01 (Google Cloud > Google Auth Platform > Clients)
+        googleIosClientId: "143996912608-n8q4upccattqvo2a6kpku884vmekgqpe.apps.googleusercontent.com",
 
         firebaseApiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
         firebaseAuthDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,

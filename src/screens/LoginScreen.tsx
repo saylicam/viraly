@@ -9,6 +9,7 @@ import { theme } from '../theme';
 import { ScreenBackground } from '../components/ui/ScreenBackground';
 import { EmailAuthModal } from '../components/EmailAuthModal';
 import { signInWithApple, saveQuestionnaireAnswers } from '../services/authService';
+import { useGoogleAuth } from '../hooks/useGoogleAuth';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Haptics from 'expo-haptics';
 
@@ -29,6 +30,8 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [appleAvailable, setAppleAvailable] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const { loginWithGoogle, ready: googleReady } = useGoogleAuth();
   const questionnaireAnswers = route?.params?.answers;
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -126,6 +129,26 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
     }
   };
 
+  const handleGoogleLogin = async () => {
+    try {
+      setError(null);
+      setGoogleLoading(true);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+      const userData = await loginWithGoogle();
+      if (userData) {
+        console.log('✅ Utilisateur connecté avec Google:', userData.uid);
+        // La sauvegarde du questionnaire et la navigation sont gérées par le useEffect sur user
+      }
+    } catch (err: any) {
+      console.error('❌ Erreur de connexion Google:', err);
+      setError('La connexion avec Google a échoué. Réessaie.');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
   const handleEmailAuthSuccess = async () => {
     setEmailModalVisible(false);
     // La sauvegarde et navigation seront gérées par le useEffect avec user
@@ -216,6 +239,35 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
               </TouchableOpacity>
             )}
 
+            {/* Bouton Google */}
+            <TouchableOpacity
+              onPress={handleGoogleLogin}
+              disabled={loading || googleLoading || !googleReady}
+              activeOpacity={0.8}
+              style={styles.emailButton}
+            >
+              <BlurView intensity={20} tint="dark" style={styles.emailButtonBlur}>
+                <LinearGradient
+                  colors={['rgba(255, 255, 255, 0.1)', 'rgba(255, 255, 255, 0.05)']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.emailButtonGradient}
+                >
+                  {googleLoading ? (
+                    <View style={styles.loadingContainer}>
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                      <Text style={styles.buttonText}>Connexion...</Text>
+                    </View>
+                  ) : (
+                    <>
+                      <Ionicons name="logo-google" size={24} color="#FFFFFF" style={styles.emailIcon} />
+                      <Text style={styles.buttonText}>Continuer avec Google</Text>
+                    </>
+                  )}
+                </LinearGradient>
+              </BlurView>
+            </TouchableOpacity>
+
             {/* Bouton Email/Password */}
             <TouchableOpacity
               onPress={() => {
@@ -239,27 +291,6 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
               </BlurView>
             </TouchableOpacity>
 
-            {/* Google désactivé pour l'instant - commenté mais présent dans le code */}
-            {/* 
-            <TouchableOpacity
-              onPress={handleGoogleLogin}
-              disabled={isConnecting || loading}
-              activeOpacity={0.8}
-              style={styles.googleButton}
-            >
-              <BlurView intensity={20} tint="dark" style={styles.googleButtonBlur}>
-                <LinearGradient
-                  colors={['rgba(255, 255, 255, 0.1)', 'rgba(255, 255, 255, 0.05)']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.googleButtonGradient}
-                >
-                  <Ionicons name="logo-google" size={24} color="#FFFFFF" style={styles.googleIcon} />
-                  <Text style={styles.buttonText}>Continuer avec Google</Text>
-                </LinearGradient>
-              </BlurView>
-            </TouchableOpacity>
-            */}
 
             {/* Bouton Mode Invité */}
             <TouchableOpacity

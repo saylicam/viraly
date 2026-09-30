@@ -7,6 +7,7 @@ import {
   onAuthStateChanged,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
+  sendPasswordResetEmail,
   signInWithCredential as firebaseSignInWithCredential
 } from 'firebase/auth';
 import { GoogleAuthProvider, OAuthProvider } from 'firebase/auth';
@@ -25,24 +26,25 @@ WebBrowser.maybeCompleteAuthSession();
  */
 
 // Configuration Google OAuth
-// ⚠️ IMPORTANT : Remplacez par votre Client ID Google depuis Google Cloud Console
-// Format : "xxxxx.apps.googleusercontent.com"
-const getGoogleClientId = () => {
-  return Constants.expoConfig?.extra?.googleClientId || 
-    process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID ||
-    "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
+// Client OAuth iOS du projet Firebase "viraly-01" (créé automatiquement quand l'app iOS
+// com.viraly.app a été ajoutée dans Firebase). Firebase accepte les jetons Google émis
+// pour les clients de SON propre projet.
+const getGoogleIosClientId = () => {
+  return Constants.expoConfig?.extra?.googleIosClientId ||
+    process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ||
+    null;
 };
 
 /**
- * Crée la configuration du provider Google pour expo-auth-session
- * ⚠️ Cette fonction doit être appelée dans un composant React avec useAuthRequest
- * @returns {Object} Configuration pour useAuthRequest
+ * Configuration du provider Google pour expo-auth-session (useIdTokenAuthRequest).
+ * Le retour vers l'app se fait via "com.viraly.app:/oauthredirect" : Expo enregistre
+ * automatiquement le bundle identifier comme schéma d'URL, pas besoin de proxy.
+ * @returns {Object} Configuration pour useIdTokenAuthRequest
  */
 export const getGoogleAuthConfig = () => {
   return {
-    clientId: getGoogleClientId(),
+    iosClientId: getGoogleIosClientId(),
     scopes: ['openid', 'profile', 'email'],
-    redirectUri: "https://auth.expo.dev/@maloxi/viraly",
   };
 };
 
@@ -320,6 +322,26 @@ export const loginWithEmail = async (email, password) => {
     throw {
       code: error.code || 'auth/unknown',
       message: error.message || 'Une erreur est survenue lors de la connexion',
+      originalError: error,
+    };
+  }
+};
+
+/**
+ * Envoie un e-mail de réinitialisation du mot de passe (en français).
+ * Firebase envoie un lien qui permet de choisir un nouveau mot de passe.
+ * @param {string} email - Adresse email du compte
+ * @returns {Promise<void>}
+ */
+export const resetPassword = async (email) => {
+  try {
+    auth.languageCode = 'fr';
+    await sendPasswordResetEmail(auth, email);
+  } catch (error) {
+    console.error('Erreur lors de la réinitialisation du mot de passe:', error);
+    throw {
+      code: error.code || 'auth/unknown',
+      message: error.message || "Impossible d'envoyer l'e-mail de réinitialisation",
       originalError: error,
     };
   }
