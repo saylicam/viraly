@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
 import { Calendar, DateData } from 'react-native-calendars';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -18,6 +19,8 @@ const { width } = Dimensions.get('window');
 
 export default function CalendarScreen() {
   const { user } = useAuth();
+  // Hauteur réelle de la barre de navigation du bas (varie selon l'iPhone)
+  const tabBarHeight = useBottomTabBarHeight();
   const [selectedDate, setSelectedDate] = useState<string>(() => {
     // Date du jour au format YYYY-MM-DD
     return toLocalDateString();
@@ -198,7 +201,7 @@ export default function CalendarScreen() {
         {/* Liste des tâches */}
         <ScrollView
           style={styles.tasksContainer}
-          contentContainerStyle={styles.tasksContent}
+          contentContainerStyle={[styles.tasksContent, { paddingBottom: tabBarHeight + 90 }]}
           showsVerticalScrollIndicator={false}
         >
           {isLoading ? (
@@ -218,7 +221,7 @@ export default function CalendarScreen() {
 
         {/* Bouton Ajouter */}
         <TouchableOpacity
-          style={styles.addButton}
+          style={[styles.addButton, { bottom: tabBarHeight + 16 }]}
           onPress={handleAddTask}
           activeOpacity={0.85}
         >
