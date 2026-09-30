@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
 import { Calendar, DateData } from 'react-native-calendars';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -11,6 +12,7 @@ import TaskList from './TaskList';
 import AddTaskModal from './AddTaskModal';
 import { getTasksByDate, getTasks, CalendarTask } from '../../services/calendarService';
 import { useAuth } from '../../hooks/useAuth';
+import { toLocalDateString } from '../../utils/date';
 
 const { width } = Dimensions.get('window');
 
@@ -18,22 +20,21 @@ export default function CalendarScreen() {
   const { user } = useAuth();
   const [selectedDate, setSelectedDate] = useState<string>(() => {
     // Date du jour au format YYYY-MM-DD
-    return new Date().toISOString().split('T')[0];
+    return toLocalDateString();
   });
   const [tasks, setTasks] = useState<CalendarTask[]>([]);
   const [allTasks, setAllTasks] = useState<CalendarTask[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
 
-  // Charger toutes les tâches pour marquer les dates
-  useEffect(() => {
-    loadAllTasks();
-  }, []);
-
-  // Charger les tâches pour la date sélectionnée
-  useEffect(() => {
-    loadTasks();
-  }, [selectedDate]);
+  // Recharger à chaque fois que l'écran est affiché (ex: tâche ajoutée depuis un autre onglet),
+  // quand l'utilisateur change (connexion) ou quand la date sélectionnée change.
+  useFocusEffect(
+    useCallback(() => {
+      loadAllTasks();
+      loadTasks();
+    }, [user?.uid, selectedDate])
+  );
 
   const loadAllTasks = async () => {
     try {

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, Modal, TouchableOpacity, TextInput, ScrollView } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, Modal, TouchableOpacity, TextInput, ScrollView, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,6 +7,7 @@ import * as Haptics from 'expo-haptics';
 import { theme } from '../../theme';
 import { saveTask, CalendarTask } from '../../services/calendarService';
 import { useAuth } from '../../hooks/useAuth';
+import { toLocalDateString, isValidDateString, isValidHourString } from '../../utils/date';
 
 interface AddTaskModalProps {
   visible: boolean;
@@ -26,16 +27,38 @@ export default function AddTaskModal({ visible, onClose, onTaskAdded, defaultDat
   const [selectedType, setSelectedType] = useState<CalendarTask['type']>('publish');
   const [title, setTitle] = useState('');
   const [hour, setHour] = useState('19:00');
-  const [date, setDate] = useState(defaultDate || new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(defaultDate || toLocalDateString());
+  const [isSaving, setIsSaving] = useState(false);
+
+  // À chaque ouverture, reprendre la date sélectionnée dans le calendrier
+  useEffect(() => {
+    if (visible) {
+      setDate(defaultDate || toLocalDateString());
+    }
+  }, [visible, defaultDate]);
 
   const handleSave = async () => {
+    if (isSaving) return;
+
     if (!title.trim()) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert('Titre manquant', 'Donne un titre à ta tâche.');
+      return;
+    }
+    if (!isValidDateString(date)) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert('Date invalide', 'Utilise le format AAAA-MM-JJ (ex : 2026-10-15).');
+      return;
+    }
+    if (!isValidHourString(hour)) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert('Heure invalide', 'Utilise le format HH:MM (ex : 19:00).');
       return;
     }
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    
+    setIsSaving(true);
+
     try {
       await saveTask({
         date,
@@ -54,6 +77,12 @@ export default function AddTaskModal({ visible, onClose, onTaskAdded, defaultDat
     } catch (error) {
       console.error('Erreur sauvegarde tâche:', error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert(
+        "Tâche non enregistrée",
+        "Impossible d'enregistrer la tâche. Vérifie ta connexion internet et réessaie."
+      );
+    } finally {
+      setIsSaving(false);
     }
   };
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
@@ -62,6 +62,11 @@ export default function TaskList({ tasks, onTaskDeleted }: TaskListProps) {
       onTaskDeleted();
     } catch (error) {
       console.error('Erreur suppression tâche:', error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert(
+        'Suppression impossible',
+        "La tâche n'a pas pu être supprimée. Vérifie ta connexion internet et réessaie."
+      );
     }
   };
 

@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, ScrollView, Alert, TouchableOpacity, Dimensions, StyleSheet } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import { MotiView } from 'moti';
@@ -15,6 +15,7 @@ import TaskList from './Calendar/TaskList';
 import AddTaskModal from './Calendar/AddTaskModal';
 import { getTasksByDate, CalendarTask, getTasks } from '../services/calendarService';
 import { useAuth } from '../hooks/useAuth';
+import { toLocalDateString } from '../utils/date';
 
 const { width } = Dimensions.get('window');
 const DAY_WIDTH = (width - 48 - 52) / 7; // Réduire pour laisser place à l'icône calendrier
@@ -23,20 +24,21 @@ export default function TimelineScreen() {
   const navigation = useNavigation<any>();
   const { user } = useAuth();
   const [selectedDate, setSelectedDate] = useState<string>(() => {
-    return new Date().toISOString().split('T')[0];
+    return toLocalDateString();
   });
   const [tasks, setTasks] = useState<CalendarTask[]>([]);
   const [allTasks, setAllTasks] = useState<CalendarTask[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
 
-  useEffect(() => {
-    loadAllTasks();
-  }, []);
-
-  useEffect(() => {
-    loadTasks();
-  }, [selectedDate]);
+  // Recharger à chaque fois que l'écran est affiché (ex: tâche ajoutée depuis un autre onglet),
+  // quand l'utilisateur change (connexion) ou quand la date sélectionnée change.
+  useFocusEffect(
+    useCallback(() => {
+      loadAllTasks();
+      loadTasks();
+    }, [user?.uid, selectedDate])
+  );
 
   const loadAllTasks = async () => {
     try {
@@ -130,7 +132,7 @@ export default function TimelineScreen() {
   };
 
   const getDateString = (date: Date) => {
-    return date.toISOString().split('T')[0];
+    return toLocalDateString(date);
   };
 
   const hasTaskOnDate = (dateStr: string) => {
@@ -149,7 +151,7 @@ export default function TimelineScreen() {
   // Données fictives pour PROCHAIN POST si aucune tâche
   const displayNextPost = nextTask || {
     title: 'Voyage entre potes',
-    date: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    date: toLocalDateString(new Date(Date.now() + 2 * 24 * 60 * 60 * 1000)),
     hour: '19:58',
     type: 'publish' as const,
   };

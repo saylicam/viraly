@@ -1,35 +1,24 @@
 /**
- * Wrapper pour Firestore qui utilise le mock en mode dev
- * Permet de remplacer tous les imports firebase/firestore par ce wrapper
- * 
- * IMPORTANT: En mode __DEV__, tous les appels Firestore sont mockés et ne font rien
- * Aucun appel réseau n'est effectué en mode développement
+ * Point d'entrée unique pour Firestore.
+ *
+ * Avant : en mode __DEV__, ce fichier remplaçait Firestore par un faux (firestoreMock.js)
+ * parce que la base Firestore n'existait pas encore dans le projet Firebase.
+ * La base existe maintenant (europe-west1) : on utilise toujours le vrai Firestore,
+ * en dev comme en production, pour tester le vrai comportement.
  */
-
-// Import conditionnel basé sur __DEV__
-// En mode dev, utiliser le mock, sinon utiliser le vrai Firestore
-let firestoreExports;
-
-if (__DEV__) {
-  // Mode développement : importer depuis le mock
-  firestoreExports = require('./firestoreMock');
-} else {
-  // Mode production : importer depuis firebase/firestore
-  firestoreExports = require('firebase/firestore');
-}
-
-// Réexporter toutes les fonctions
-export const getDoc = firestoreExports.getDoc;
-export const setDoc = firestoreExports.setDoc;
-export const updateDoc = firestoreExports.updateDoc;
-export const addDoc = firestoreExports.addDoc;
-export const deleteDoc = firestoreExports.deleteDoc;
-export const onSnapshot = firestoreExports.onSnapshot;
-export const doc = firestoreExports.doc;
-export const collection = firestoreExports.collection;
-export const serverTimestamp = firestoreExports.serverTimestamp;
-export const query = firestoreExports.query;
-export const where = firestoreExports.where;
-export const orderBy = firestoreExports.orderBy;
-export const limit = firestoreExports.limit;
-
+export {
+  getDoc,
+  setDoc,
+  updateDoc,
+  addDoc,
+  deleteDoc,
+  onSnapshot,
+  doc,
+  collection,
+  serverTimestamp,
+  query,
+  where,
+  orderBy,
+  limit,
+  getDocs,
+} from 'firebase/firestore';
