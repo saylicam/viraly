@@ -1,11 +1,18 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, Animated, TouchableOpacity, SafeAreaView, Dimensions, Alert } from 'react-native';
+import { View, Text, StyleSheet, Animated, TouchableOpacity, SafeAreaView, Dimensions, Alert, Linking } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Sparkles, Zap, Target, TrendingUp, BarChart3, X } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useRevenueCat } from '../context/RevenueCatContext';
 
 const { width } = Dimensions.get('window');
+
+// Liens légaux affichés sous le bouton d'achat (exigés par Apple pour les abonnements)
+const TERMS_URL = 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
+// TODO: remplacer par l'URL de ta politique de confidentialité avant la soumission à Apple
+const PRIVACY_URL = 'https://viraly.app/confidentialite';
+
+type PlanKey = 'annual' | 'monthly';
 
 interface PaywallScreenProps {
   navigation: any;
@@ -41,14 +48,32 @@ const BENEFITS = [
 
 export default function PaywallScreen({ navigation }: PaywallScreenProps) {
   const [isLoading, setIsLoading] = useState(false);
-  const { 
-    monthlyPackage, 
-    monthlyPrice, 
-    purchasePackage, 
-    restorePurchases, 
+  const [selectedPlan, setSelectedPlan] = useState<PlanKey>('annual');
+  const {
+    monthlyPackage,
+    annualPackage,
+    monthlyPrice,
+    annualPrice,
+    purchasePackage,
+    restorePurchases,
     isPremium,
-    isLoading: revenueCatLoading 
+    isLoading: revenueCatLoading,
   } = useRevenueCat();
+
+  const selectedPackage = selectedPlan === 'annual' ? (annualPackage ?? monthlyPackage) : (monthlyPackage ?? annualPackage);
+  const hasFreeTrial = !!selectedPackage?.product.introPrice && selectedPackage.product.introPrice.price === 0;
+
+  // Réduction de l'annuel par rapport à 12 mois de mensuel (ex : -48 %)
+  const annualSavings = (() => {
+    const m = monthlyPackage?.product.price;
+    const a = annualPackage?.product.price;
+    if (!m || !a) return null;
+    const pct = Math.round((1 - a / (m * 12)) * 100);
+    return pct > 0 ? pct : null;
+  })();
+  const annualPerMonth = annualPackage
+    ? `${(annualPackage.product.price / 12).toFixed(2).replace('.', ',')} ${annualPackage.product.currencyCode === 'EUR' ? '€' : annualPackage.product.currencyCode}`
+    : null;
   
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const glowAnim = useRef(new Animated.Value(0.5)).current;
@@ -115,51 +140,31 @@ export default function PaywallScreen({ navigation }: PaywallScreenProps) {
   };
 
   const handleActivatePremium = async () => {
-    console.log('handleActivatePremium appelé');
-    console.log('monthlyPackage:', monthlyPackage);
-    console.log('isLoading:', isLoading);
-    console.log('revenueCatLoading:', revenueCatLoading);
-    
-    if (!monthlyPackage) {
+    if (!selectedPackage) {
       Alert.alert(
-        'Erreur',
-        'Le package d\'abonnement n\'est pas disponible. Veuillez réessayer plus tard.',
+        'Abonnement indisponible',
+        "L'abonnement n'est pas disponible pour le moment. Vérifie ta connexion et réessaie.",
         [{ text: 'OK' }]
       );
       return;
     }
-
-    if (isLoading || revenueCatLoading) {
-      console.log('Achat déjà en cours, ignoré');
-      return;
-    }
+    if (isLoading || revenueCatLoading) return;
 
     setIsLoading(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
-      console.log('Début de l\'achat du package:', monthlyPackage.identifier);
-      await purchasePackage(monthlyPackage);
-      console.log('Achat réussi');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      
-      // Attendre un peu pour que le statut premium soit mis à jour
-      await new Promise(resolve => setTimeout(resolve, 300));
-      
-      // Vérifier à nouveau le statut premium et rediriger
-      navigation.goBack();
-    } catch (error: any) {
-      console.error('Erreur lors de l\'abonnement:', error);
-      
-      // Ne pas afficher d'alerte si l'utilisateur a annulé
-      if (error.message && (error.message.includes('annulé') || error.message.includes('cancelled'))) {
-        console.log('Achat annulé par l\'utilisateur');
-        return;
+      const premium = await purchasePackage(selectedPackage);
+      if (premium) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        navigation.goBack();
       }
-      
+      // premium === false : l'utilisateur a annulé, on ne fait rien
+    } catch (error: any) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert(
-        'Erreur d\'achat',
-        error.message || 'Une erreur est survenue lors de l\'achat. Veuillez réessayer.',
+        "L'achat n'a pas abouti",
+        error?.message || 'Une erreur est survenue lors de l\'achat. Réessaie.',
         [{ text: 'OK' }]
       );
     } finally {
@@ -172,9 +177,9 @@ export default function PaywallScreen({ navigation }: PaywallScreenProps) {
     
     try {
       setIsLoading(true);
-      await restorePurchases();
-      
-      if (isPremium) {
+      const restored = await restorePurchases();
+
+      if (restored) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         navigation.goBack();
       } else {
@@ -213,13 +218,11 @@ export default function PaywallScreen({ navigation }: PaywallScreenProps) {
         locations={[0, 0.5, 1]}
         style={styles.container}
       >
-        <Animated.View
-          style={[
-            styles.content,
-            {
-              opacity: fadeAnim,
-            },
-          ]}
+        <Animated.ScrollView
+          style={{ flex: 1, opacity: fadeAnim }}
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+          bounces={false}
         >
           {/* Header avec bouton fermer */}
           <View style={styles.header}>
@@ -310,14 +313,51 @@ export default function PaywallScreen({ navigation }: PaywallScreenProps) {
             })}
           </View>
 
-          {/* Bloc Prix - Badge avec glow */}
-          <View style={styles.pricingSection}>
-            <View style={styles.pricingBadge}>
-              <View style={styles.pricingGlow} />
-              <Text style={styles.pricingText}>
-                {revenueCatLoading ? 'Chargement...' : monthlyPrice ? `${monthlyPrice} / mois` : '7,99 € / mois'}
-              </Text>
-            </View>
+          {/* Choix de la formule */}
+          <View style={styles.plansRow}>
+            {([
+              {
+                key: 'annual' as PlanKey,
+                label: 'Annuel',
+                price: annualPrice ?? '49,99 €',
+                period: '/ an',
+                sub: annualPerMonth ? `soit ${annualPerMonth} / mois` : null,
+                badge: annualSavings ? `-${annualSavings} %` : 'Meilleure offre',
+              },
+              {
+                key: 'monthly' as PlanKey,
+                label: 'Mensuel',
+                price: monthlyPrice ?? '7,99 €',
+                period: '/ mois',
+                sub: 'Sans engagement',
+                badge: null,
+              },
+            ]).map((plan) => {
+              const selected = selectedPlan === plan.key;
+              return (
+                <TouchableOpacity
+                  key={plan.key}
+                  activeOpacity={0.85}
+                  onPress={() => {
+                    Haptics.selectionAsync();
+                    setSelectedPlan(plan.key);
+                  }}
+                  style={[styles.planCard, selected && styles.planCardSelected]}
+                >
+                  {plan.badge && (
+                    <View style={styles.planBadge}>
+                      <Text style={styles.planBadgeText}>{plan.badge}</Text>
+                    </View>
+                  )}
+                  <Text style={styles.planLabel}>{plan.label}</Text>
+                  <Text style={styles.planPrice}>
+                    {revenueCatLoading ? '…' : plan.price}
+                    <Text style={styles.planPeriod}> {plan.period}</Text>
+                  </Text>
+                  {plan.sub && <Text style={styles.planSub}>{plan.sub}</Text>}
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
           {/* Bouton CTA Premium refait */}
@@ -333,11 +373,11 @@ export default function PaywallScreen({ navigation }: PaywallScreenProps) {
             />
             <TouchableOpacity
               onPress={handleActivatePremium}
-              disabled={isLoading || revenueCatLoading || !monthlyPackage}
+              disabled={isLoading || revenueCatLoading || !selectedPackage}
               activeOpacity={0.85}
               style={[
                 styles.ctaButton,
-                (isLoading || revenueCatLoading || !monthlyPackage) && styles.ctaButtonDisabled
+                (isLoading || revenueCatLoading || !selectedPackage) && styles.ctaButtonDisabled
               ]}
             >
               <LinearGradient
@@ -353,7 +393,7 @@ export default function PaywallScreen({ navigation }: PaywallScreenProps) {
                 <View style={styles.ctaContent}>
                   <Sparkles size={28} color="#FFFFFF" strokeWidth={2.5} />
                   <Text style={styles.ctaText}>
-                    {isLoading || revenueCatLoading ? 'Chargement...' : 'Activer Viraly Premium'}
+                    {isLoading || revenueCatLoading ? 'Chargement...' : hasFreeTrial ? 'Essayer 3 jours gratuits' : 'Activer Viraly Premium'}
                   </Text>
                 </View>
               </LinearGradient>
@@ -367,23 +407,31 @@ export default function PaywallScreen({ navigation }: PaywallScreenProps) {
             activeOpacity={0.7}
           >
             <Text style={styles.alreadyPremiumText}>
-              Déjà abonné ? Continuer
+              Restaurer mes achats
             </Text>
           </TouchableOpacity>
 
-          {/* Mentions légales */}
+          {/* Mentions légales (exigées par Apple) */}
           <View style={styles.termsSection}>
             <Text style={styles.termsText}>
-              Renouvellement automatique
+              {hasFreeTrial
+                ? `3 jours gratuits, puis ${selectedPlan === 'annual' ? `${annualPrice ?? '49,99 €'} par an` : `${monthlyPrice ?? '7,99 €'} par mois`}.`
+                : `${selectedPlan === 'annual' ? `${annualPrice ?? '49,99 €'} par an` : `${monthlyPrice ?? '7,99 €'} par mois`}.`}
             </Text>
             <Text style={styles.termsText}>
-              Résiliation à tout moment dans les réglages
+              Renouvellement automatique, résiliable à tout moment dans les réglages de ton compte Apple au moins 24 h avant la fin de la période.
             </Text>
-            <Text style={styles.termsText}>
-              Le paiement est débité sur votre compte Apple
-            </Text>
+            <View style={styles.legalLinks}>
+              <Text style={styles.legalLink} onPress={() => Linking.openURL(TERMS_URL)}>
+                Conditions d'utilisation
+              </Text>
+              <Text style={styles.termsText}>  ·  </Text>
+              <Text style={styles.legalLink} onPress={() => Linking.openURL(PRIVACY_URL)}>
+                Confidentialité
+              </Text>
+            </View>
           </View>
-        </Animated.View>
+        </Animated.ScrollView>
       </LinearGradient>
     </SafeAreaView>
   );
@@ -398,7 +446,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    flex: 1,
+    flexGrow: 1,
     paddingHorizontal: 24,
     paddingTop: 6,
     paddingBottom: 12,
@@ -647,6 +695,71 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: 'rgba(255, 255, 255, 0.5)',
     fontWeight: '500',
+  },
+  // Choix de la formule
+  plansRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 16,
+  },
+  planCard: {
+    flex: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    alignItems: 'center',
+  },
+  planCardSelected: {
+    borderColor: '#C25CFF',
+    backgroundColor: 'rgba(194, 92, 255, 0.14)',
+  },
+  planBadge: {
+    position: 'absolute',
+    top: -10,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    backgroundColor: '#FF4FF9',
+  },
+  planBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  planLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.7)',
+    marginBottom: 4,
+  },
+  planPrice: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  planPeriod: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: 'rgba(255, 255, 255, 0.6)',
+  },
+  planSub: {
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.5)',
+    marginTop: 4,
+  },
+  legalLinks: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  legalLink: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.7)',
+    textDecorationLine: 'underline',
   },
   // Mentions légales
   termsSection: {

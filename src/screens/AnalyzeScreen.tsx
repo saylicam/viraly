@@ -7,6 +7,7 @@ import { Sparkles, RefreshCw, Upload } from 'lucide-react-native';
 import { NeonButton } from '../components/ui/NeonButton';
 import { VideoPreview } from '../components/analysis/VideoPreview';
 import { AnalyzeInfo } from '../components/analysis/AnalyzeInfo';
+import { useRevenueCat } from '../context/RevenueCatContext';
 
 const { width } = Dimensions.get('window');
 
@@ -14,6 +15,20 @@ export default function AnalyzeScreen({ navigation }: any) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
   const [videoInfo, setVideoInfo] = useState<{ name?: string; size?: number } | null>(null);
+  const { isPremium, isLoading: subscriptionLoading } = useRevenueCat();
+
+  // L'analyse est réservée aux abonnés : sinon, on affiche le paywall
+  const ensurePremium = () => {
+    if (subscriptionLoading) {
+      Alert.alert('Un instant…', 'Vérification de ton abonnement en cours, réessaie dans une seconde.');
+      return false;
+    }
+    if (!isPremium) {
+      navigation.navigate('Paywall');
+      return false;
+    }
+    return true;
+  };
 
   const requestPermissions = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -26,6 +41,7 @@ export default function AnalyzeScreen({ navigation }: any) {
 
   const handleSelectVideo = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (!ensurePremium()) return;
     const hasPermission = await requestPermissions();
     if (!hasPermission) return;
 
@@ -58,6 +74,7 @@ export default function AnalyzeScreen({ navigation }: any) {
 
   const analyzeVideo = async () => {
     if (!selectedVideo || isAnalyzing) return;
+    if (!ensurePremium()) return;
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     setIsAnalyzing(true);
