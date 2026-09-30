@@ -29,19 +29,21 @@ if (env.GEMINI_API_KEY) {
   try {
     genAI = new GoogleGenerativeAI(env.GEMINI_API_KEY);
     
-    // VERIFICATION DES MODÈLES (Debug) : Tester l'accès au modèle gemini-2.5-flash
+    const geminiModel = env.GEMINI_MODEL;
+
+    // VERIFICATION DES MODÈLES (Debug)
     try {
-      const testModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-      console.log('✅ Modèle gemini-2.5-flash configuré et accessible via l\'API SDK.');
+      const testModel = genAI.getGenerativeModel({ model: geminiModel });
+      console.log(`✅ Modèle ${geminiModel} configuré et accessible via l'API SDK.`);
     } catch (e: any) {
-      console.error('⚠️ ATTENTION: Le code ne semble pas trouver gemini-2.5-flash via l\'API SDK.');
+      console.error(`⚠️ ATTENTION: Le code ne semble pas trouver ${geminiModel} via l'API SDK.`);
       console.error('   Erreur:', e?.message || e);
       throw e; // Arrêter l'initialisation si le modèle n'est pas accessible
     }
     
-    // CONFIGURATION DU MODÈLE : Utiliser EXCLUSIVEMENT gemini-2.5-flash
+    // CONFIGURATION DU MODÈLE
     model = genAI.getGenerativeModel({ 
-      model: 'gemini-2.5-flash',
+      model: geminiModel,
       generationConfig: {
         temperature: 0.7,
         topP: 0.95,
@@ -50,7 +52,7 @@ if (env.GEMINI_API_KEY) {
       },
     });
     console.log('✅ Gemini AI initialized successfully');
-    console.log('   Model: gemini-2.5-flash (EXCLUSIF)');
+    console.log(`   Model: ${geminiModel}`);
     console.log('   API Key: ' + (env.GEMINI_API_KEY.substring(0, 10) + '...'));
   } catch (error) {
     console.error('❌ Failed to initialize Gemini AI:', error);

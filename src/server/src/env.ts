@@ -42,6 +42,7 @@ const envSchema = z.object({
   // Google Gemini API (supports both GEMINI_API_KEY and EXPO_PUBLIC_GEMINI_API_KEY)
   GEMINI_API_KEY: z.string().optional(),
   EXPO_PUBLIC_GEMINI_API_KEY: z.string().optional(),
+  GEMINI_MODEL: z.string().default('gemini-3.5-flash-lite'),
   
   // CORS
   CORS_ORIGIN: z.string().default('*'),

@@ -175,3 +175,4 @@ Firestore est maintenant correctement configuré pour Expo Go avec gestion optim
 
 
 
+

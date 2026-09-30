@@ -2,13 +2,11 @@ import React, { useState } from 'react';
 import { View, Text, Alert, ScrollView, TouchableOpacity, StyleSheet, Dimensions, SafeAreaView } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
-import { MotiView } from 'moti';
 import { Sparkles, RefreshCw, Upload } from 'lucide-react-native';
 
 import { NeonButton } from '../components/ui/NeonButton';
 import { VideoPreview } from '../components/analysis/VideoPreview';
 import { AnalyzeInfo } from '../components/analysis/AnalyzeInfo';
-import { apiService } from '../services/api';
 
 const { width } = Dimensions.get('window');
 
@@ -28,8 +26,28 @@ export default function AnalyzeScreen({ navigation }: any) {
 
   const handleSelectVideo = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    // Rediriger vers le Paywall au lieu d'ouvrir directement la sélection de vidéo
-    navigation.navigate('Paywall');
+    const hasPermission = await requestPermissions();
+    if (!hasPermission) return;
+
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+        allowsEditing: false,
+        quality: 1,
+        videoMaxDuration: 60,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+        setSelectedVideo(asset.uri);
+        setVideoInfo({
+          name: asset.fileName || asset.uri.split('/').pop(),
+          size: asset.fileSize,
+        });
+      }
+    } catch (error) {
+      Alert.alert('Erreur', 'Impossible de charger la vidéo. Réessaye plus tard.');
+    }
   };
 
   const handleRemoveVideo = () => {
@@ -39,58 +57,14 @@ export default function AnalyzeScreen({ navigation }: any) {
   };
 
   const analyzeVideo = async () => {
-    if (!selectedVideo) return;
-    // Rediriger vers le Paywall au lieu de lancer directement l'analyse
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    navigation.navigate('Paywall');
-    
-    // TODO: Une fois l'utilisateur premium, décommenter le code ci-dessous
-    /*
-    setIsAnalyzing(true);
+    if (!selectedVideo || isAnalyzing) return;
+
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    setIsAnalyzing(true);
 
-    try {
-      navigation.navigate('VideoAnalyzing', { videoUri: selectedVideo });
-      
-      const healthCheck = await apiService.healthCheck();
-      if (!healthCheck.success) throw new Error('Serveur inaccessible');
-
-      const response = await apiService.uploadVideo(selectedVideo);
-      
-      if (!response.success || !response.data) {
-        throw new Error(response.error || 'Erreur analyse');
-      }
-
-      let analysisData: any;
-      
-      if (response.data.data?.analysis) {
-        analysisData = response.data.data.analysis;
-      } else if (response.data.analysis) {
-        analysisData = response.data.analysis;
-      } else {
-        analysisData = response.data;
-      }
-      
-      const result = {
-        ...analysisData,
-        potentielViral: analysisData.avis_global?.note_sur_100 || analysisData.potentielViral || 70,
-        description: analysisData.description_video || analysisData.description || '',
-        pointsForts: analysisData.analyse_viralite?.points_forts || analysisData.pointsForts || [],
-        ameliorations: analysisData.analyse_viralite?.points_faibles || analysisData.ameliorations || [],
-      };
-
-      navigation.replace('AnalysisResult', { videoUri: selectedVideo, result });
-
-    } catch (error: any) {
-      console.error(error);
-      Alert.alert('Erreur', error.message || "L'analyse a échoué");
-      if (navigation.canGoBack()) {
-        navigation.goBack();
-      }
-    } finally {
-      setIsAnalyzing(false);
-    }
-    */
+    // L'appel Gemini + navigation résultats se font dans VideoAnalyzingScreen
+    navigation.navigate('VideoAnalyzing', { videoUri: selectedVideo });
+    setIsAnalyzing(false);
   };
 
   return (

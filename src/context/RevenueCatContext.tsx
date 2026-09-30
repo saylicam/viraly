@@ -40,6 +40,74 @@ export const RevenueCatProvider: React.FC<{ children: ReactNode }> = ({ children
   const [customerInfo, setCustomerInfo] = useState<CustomerInfo | null>(null);
 
   /**
+   * Vérifie le statut premium de l'utilisateur
+   */
+  const checkPremiumStatus = async () => {
+    try {
+      const info = await Purchases.getCustomerInfo();
+      setCustomerInfo(info);
+      
+      // Vérifier si l'utilisateur a l'entitlement "pro"
+      const hasProEntitlement = info.entitlements.active[ENTITLEMENT_ID] !== undefined;
+      setIsPremium(hasProEntitlement);
+    } catch (error) {
+      console.error('Erreur lors de la vérification du statut premium:', error);
+      setIsPremium(false);
+    }
+  };
+
+  /**
+   * Charge l'offering par défaut et trouve le package mensuel
+   */
+  const loadOffering = async () => {
+    try {
+      const offering = await Purchases.getOfferings();
+      
+      if (offering.current) {
+        setCurrentOffering(offering.current);
+        
+        console.log('Offering trouvé:', offering.current.identifier);
+        console.log('Packages disponibles:', offering.current.availablePackages.map(p => ({
+          identifier: p.identifier,
+          productId: p.product.identifier
+        })));
+        
+        // Trouver le package mensuel dans l'offering
+        // Chercher par identifiant de package ou par identifiant de produit store
+        const monthlyPkg = offering.current.availablePackages.find(
+          (pkg) => 
+            pkg.identifier === PRODUCT_ID || 
+            pkg.product.identifier === PRODUCT_ID ||
+            pkg.identifier.includes('monthly') ||
+            pkg.identifier.includes('MONTHLY')
+        );
+
+        if (monthlyPkg) {
+          console.log('Package mensuel trouvé:', monthlyPkg.identifier);
+          setMonthlyPackage(monthlyPkg);
+          // Formater le prix
+          const price = monthlyPkg.product.priceString;
+          setMonthlyPrice(price);
+        } else {
+          // Si le package spécifique n'est pas trouvé, prendre le premier package disponible
+          const firstPackage = offering.current.availablePackages[0];
+          if (firstPackage) {
+            console.warn(`Package ${PRODUCT_ID} non trouvé, utilisation du premier package disponible: ${firstPackage.identifier}`);
+            setMonthlyPackage(firstPackage);
+            setMonthlyPrice(firstPackage.product.priceString);
+          } else {
+            console.error('Aucun package disponible dans l\'offering');
+          }
+        }
+      } else {
+        console.warn('Aucune offering courante disponible');
+      }
+    } catch (error) {
+      console.error('Erreur lors du chargement de l\'offering:', error);
+    }
+  };
+
+  /**
    * Initialise RevenueCat SDK
    */
   useEffect(() => {
@@ -54,6 +122,8 @@ export const RevenueCatProvider: React.FC<{ children: ReactNode }> = ({ children
           // Pour Android, utilisez votre clé API Android
           await Purchases.configure({ apiKey: REVENUECAT_API_KEY });
         }
+
+        console.log('RevenueCat initialisé avec succès');
 
         // Définir l'identifiant utilisateur si nécessaire (optionnel)
         // await Purchases.logIn(userId);
@@ -72,64 +142,6 @@ export const RevenueCatProvider: React.FC<{ children: ReactNode }> = ({ children
     initializeRevenueCat();
   }, []);
 
-  /**
-   * Charge l'offering par défaut et trouve le package mensuel
-   */
-  const loadOffering = async () => {
-    try {
-      const offering = await Purchases.getOfferings();
-      
-      if (offering.current) {
-        setCurrentOffering(offering.current);
-        
-        // Trouver le package mensuel dans l'offering
-        // Chercher par identifiant de package ou par identifiant de produit store
-        const monthlyPkg = offering.current.availablePackages.find(
-          (pkg) => 
-            pkg.identifier === PRODUCT_ID || 
-            pkg.storeProduct.identifier === PRODUCT_ID ||
-            pkg.identifier.includes('monthly') ||
-            pkg.identifier.includes('MONTHLY')
-        );
-
-        if (monthlyPkg) {
-          setMonthlyPackage(monthlyPkg);
-          // Formater le prix
-          const price = monthlyPkg.product.priceString;
-          setMonthlyPrice(price);
-        } else {
-          // Si le package spécifique n'est pas trouvé, prendre le premier package disponible
-          const firstPackage = offering.current.availablePackages[0];
-          if (firstPackage) {
-            console.warn(`Package ${PRODUCT_ID} non trouvé, utilisation du premier package disponible: ${firstPackage.identifier}`);
-            setMonthlyPackage(firstPackage);
-            setMonthlyPrice(firstPackage.product.priceString);
-          } else {
-            console.error('Aucun package disponible dans l\'offering');
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Erreur lors du chargement de l\'offering:', error);
-    }
-  };
-
-  /**
-   * Vérifie le statut premium de l'utilisateur
-   */
-  const checkPremiumStatus = async () => {
-    try {
-      const info = await Purchases.getCustomerInfo();
-      setCustomerInfo(info);
-      
-      // Vérifier si l'utilisateur a l'entitlement "pro"
-      const hasProEntitlement = info.entitlements.active[ENTITLEMENT_ID] !== undefined;
-      setIsPremium(hasProEntitlement);
-    } catch (error) {
-      console.error('Erreur lors de la vérification du statut premium:', error);
-      setIsPremium(false);
-    }
-  };
 
   /**
    * Achete un package
@@ -212,3 +224,4 @@ export const useRevenueCat = (): RevenueCatContextType => {
   }
   return context;
 };
+

@@ -177,24 +177,26 @@ if (env.GEMINI_API_KEY) {
       console.warn('   Erreur:', e);
     }
     
-    // VERIFICATION DES MODÈLES (Debug) : Tester l'accès au modèle gemini-2.5-flash
+    const geminiModel = env.GEMINI_MODEL;
+
+    // VERIFICATION DES MODÈLES (Debug)
     try {
-      const testModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-      console.log('✅ Modèle gemini-2.5-flash configuré et accessible via l\'API SDK.');
+      const testModel = genAI.getGenerativeModel({ model: geminiModel });
+      console.log(`✅ Modèle ${geminiModel} configuré et accessible via l'API SDK.`);
     } catch (e: any) {
-      console.error('⚠️ ATTENTION: Le code ne semble pas trouver gemini-2.5-flash via l\'API SDK.');
+      console.error(`⚠️ ATTENTION: Le code ne semble pas trouver ${geminiModel} via l'API SDK.`);
       console.error('   Erreur:', e?.message || e);
       throw e; // Arrêter l'initialisation si le modèle n'est pas accessible
     }
     
-    // CONFIGURATION DU MODÈLE : Utiliser EXCLUSIVEMENT gemini-2.5-flash
+    // CONFIGURATION DU MODÈLE (JSON structuré + inlineData conservés)
     model = genAI.getGenerativeModel({ 
-      model: 'gemini-2.5-flash',
+      model: geminiModel,
       generationConfig: generationConfig,
     });
     
     console.log('✅ Gemini AI initialized successfully');
-    console.log('   Model: gemini-2.5-flash');
+    console.log(`   Model: ${geminiModel}`);
     console.log('   Response format: JSON (structured)');
     console.log('   API Key: ' + (env.GEMINI_API_KEY.substring(0, 10) + '...'));
     console.log('   Method: inlineData (direct upload, no FileManager)');
@@ -630,7 +632,7 @@ Tu dois évaluer la vidéo comme un analyste TikTok professionnel. La distributi
     console.log('🤖 Envoi de la requête d\'analyse à Gemini avec inlineData...');
     console.log(`   Type MIME: ${mimetype}`);
     console.log(`   Taille base64: ${(videoBase64.length / 1024).toFixed(2)} KB`);
-    console.log(`   Modèle: gemini-2.5-flash`);
+    console.log(`   Modèle: ${env.GEMINI_MODEL}`);
     console.log(`   Format attendu: JSON structuré`);
     const startTime = Date.now();
     

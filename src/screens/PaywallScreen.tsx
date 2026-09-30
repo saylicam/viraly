@@ -115,6 +115,11 @@ export default function PaywallScreen({ navigation }: PaywallScreenProps) {
   };
 
   const handleActivatePremium = async () => {
+    console.log('handleActivatePremium appelé');
+    console.log('monthlyPackage:', monthlyPackage);
+    console.log('isLoading:', isLoading);
+    console.log('revenueCatLoading:', revenueCatLoading);
+    
     if (!monthlyPackage) {
       Alert.alert(
         'Erreur',
@@ -124,25 +129,31 @@ export default function PaywallScreen({ navigation }: PaywallScreenProps) {
       return;
     }
 
+    if (isLoading || revenueCatLoading) {
+      console.log('Achat déjà en cours, ignoré');
+      return;
+    }
+
     setIsLoading(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
+      console.log('Début de l\'achat du package:', monthlyPackage.identifier);
       await purchasePackage(monthlyPackage);
+      console.log('Achat réussi');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       
-      // L'effet useEffect détectera le changement de isPremium et redirigera
-      // Si ce n'est pas le cas, rediriger manuellement après un court délai
-      setTimeout(() => {
-        if (isPremium) {
-          navigation.goBack();
-        }
-      }, 500);
+      // Attendre un peu pour que le statut premium soit mis à jour
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      // Vérifier à nouveau le statut premium et rediriger
+      navigation.goBack();
     } catch (error: any) {
       console.error('Erreur lors de l\'abonnement:', error);
       
       // Ne pas afficher d'alerte si l'utilisateur a annulé
-      if (error.message && error.message.includes('annulé')) {
+      if (error.message && (error.message.includes('annulé') || error.message.includes('cancelled'))) {
+        console.log('Achat annulé par l\'utilisateur');
         return;
       }
       
@@ -318,12 +329,16 @@ export default function PaywallScreen({ navigation }: PaywallScreenProps) {
                   opacity: ctaGlowOpacity,
                 },
               ]}
+              pointerEvents="none"
             />
             <TouchableOpacity
               onPress={handleActivatePremium}
               disabled={isLoading || revenueCatLoading || !monthlyPackage}
               activeOpacity={0.85}
-              style={styles.ctaButton}
+              style={[
+                styles.ctaButton,
+                (isLoading || revenueCatLoading || !monthlyPackage) && styles.ctaButtonDisabled
+              ]}
             >
               <LinearGradient
                 colors={['#C25CFF', '#FF4FF9', '#5AC8FA']}
@@ -571,6 +586,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     backgroundColor: '#C25CFF',
     opacity: 0.25,
+    zIndex: 0,
   },
   ctaButton: {
     width: '100%',
@@ -582,6 +598,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.4,
     shadowRadius: 14,
     elevation: 10,
+    zIndex: 10,
+  },
+  ctaButtonDisabled: {
+    opacity: 0.6,
   },
   ctaGradient: {
     flex: 1,

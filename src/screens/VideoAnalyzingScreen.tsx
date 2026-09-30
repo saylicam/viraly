@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, Animated, Dimensions, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { theme } from '../theme';
 import AnimatedBackground from '../components/AnimatedBackground';
+import { apiService } from '../services/api';
 
 const { width, height } = Dimensions.get('window');
 
@@ -181,32 +182,132 @@ export default function VideoAnalyzingScreen({ navigation, route }: VideoAnalyzi
     }
   }, [currentStep]);
 
-  // Simulation des étapes de chargement
+  // Animation cosmétique des étapes (tant que l'API n'a pas répondu)
   useEffect(() => {
     const stepInterval = setInterval(() => {
       setCurrentStep(prev => {
         if (prev < ANALYSIS_STEPS.length - 1) {
           return prev + 1;
-        } else {
-          setIsComplete(true);
-          setCompletedSteps([0, 1, 2, 3, 4]);
-          // Cocher la dernière étape
-          Animated.spring(stepAnims[4].checkScale, {
-            toValue: 1,
-            tension: 100,
-            friction: 7,
-            useNativeDriver: true,
-          }).start();
-          clearInterval(stepInterval);
-          return prev;
         }
+        clearInterval(stepInterval);
+        return prev;
       });
-    }, 2500); // Chaque étape dure 2.5 secondes
+    }, 2500);
 
     return () => {
       clearInterval(stepInterval);
     };
   }, []);
+
+  // Vrai appel API Gemini via le backend
+  useEffect(() => {
+    const videoUri = route.params?.videoUri;
+    if (!videoUri) {
+      Alert.alert('Erreur', 'Aucune vidéo à analyser.');
+      if (navigation.canGoBack()) navigation.goBack();
+      return;
+    }
+
+    let cancelled = false;
+
+    const runAnalysis = async () => {
+      try {
+        console.log('🎬 Démarrage analyse vidéo:', videoUri);
+
+        const healthCheck = await apiService.healthCheck();
+        if (cancelled) return;
+
+        if (!healthCheck.success) {
+          throw new Error(
+            'Serveur inaccessible. Vérifie que le backend tourne (cd src/server && npm run dev) et que EXPO_PUBLIC_API_URL pointe vers ton PC.'
+          );
+        }
+
+        const response = await apiService.uploadVideo(videoUri);
+        if (cancelled) return;
+
+        if (!response.success || !response.data) {
+          throw new Error(
+            typeof response.error === 'string'
+              ? response.error
+              : (response as any).error?.message || 'Erreur lors de l\'analyse'
+          );
+        }
+
+        // Le backend renvoie { success, data: { analysis } } ; apiService enveloppe encore une fois
+        const payload: any = response.data;
+        let analysisData: any;
+        if (payload?.data?.analysis) {
+          analysisData = payload.data.analysis;
+        } else if (payload?.analysis) {
+          analysisData = payload.analysis;
+        } else {
+          analysisData = payload;
+        }
+
+        if (!analysisData || typeof analysisData !== 'object') {
+          throw new Error('Réponse d\'analyse invalide');
+        }
+
+        const result = {
+          ...analysisData,
+          potentielViral:
+            analysisData.score_sur_100 ??
+            analysisData.avis_global?.note_sur_100 ??
+            analysisData.potentielViral ??
+            70,
+          description:
+            analysisData.resume_video?.court ||
+            analysisData.description_video ||
+            analysisData.description ||
+            '',
+          pointsForts:
+            analysisData.pourquoi_ca_perce?.preview ||
+            analysisData.analyse_viralite?.points_forts ||
+            analysisData.pointsForts ||
+            [],
+          ameliorations:
+            analysisData.pourquoi_ca_floppe?.preview ||
+            analysisData.analyse_viralite?.points_faibles ||
+            analysisData.ameliorations ||
+            [],
+        };
+
+        setIsComplete(true);
+        setCompletedSteps([0, 1, 2, 3, 4]);
+        setCurrentStep(ANALYSIS_STEPS.length - 1);
+        Animated.spring(stepAnims[ANALYSIS_STEPS.length - 1].checkScale, {
+          toValue: 1,
+          tension: 100,
+          friction: 7,
+          useNativeDriver: true,
+        }).start();
+
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+        // Court délai pour afficher "Analyse terminée" puis naviguer
+        setTimeout(() => {
+          if (cancelled) return;
+          navigation.replace('AnalysisResult', { videoUri, result });
+        }, 800);
+      } catch (error: any) {
+        if (cancelled) return;
+        console.error('❌ Analyse vidéo échouée:', error);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        Alert.alert(
+          'Erreur',
+          error?.message || "L'analyse a échoué. Réessaie avec une autre vidéo.",
+          [{ text: 'OK', onPress: () => navigation.canGoBack() && navigation.goBack() }]
+        );
+      }
+    };
+
+    runAnalysis();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [route.params?.videoUri, navigation]);
 
   const spin = rotateAnim.interpolate({
     inputRange: [0, 1],
