@@ -21,15 +21,14 @@ const PREMIUM_FIELDS = [
   'chance_trend',
   'vues_attendues',
   'meilleurs_horaires',
+  'pourquoi_ca_perce',
+  'pourquoi_ca_floppe',
 ];
 
 /** Version gratuite : score, verdict et résumé visibles ; le détail est retiré. */
 const toFreeAnalysis = (analysis: any) => {
   const free: any = { ...analysis, limited: true };
   for (const field of PREMIUM_FIELDS) delete free[field];
-  for (const key of ['pourquoi_ca_perce', 'pourquoi_ca_floppe']) {
-    if (free[key]?.preview) free[key] = { preview: free[key].preview, complet: free[key].preview };
-  }
   return free;
 };
 

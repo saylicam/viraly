@@ -22,12 +22,11 @@ const PremiumLock = ({ locked, onUnlock, children }: { locked: boolean; onUnlock
     <View style={lockStyles.wrapper}>
       <View pointerEvents="none">{children}</View>
       <TouchableOpacity activeOpacity={0.85} onPress={onUnlock} style={lockStyles.overlayTouch}>
-        <BlurView intensity={28} tint="dark" style={lockStyles.overlay}>
-          <View style={lockStyles.lockCircle}>
-            <Lock size={18} color="#FFFFFF" />
+        <BlurView intensity={30} tint="dark" style={lockStyles.overlay}>
+          <View style={lockStyles.lockPill}>
+            <Lock size={14} color="#FFFFFF" />
+            <Text style={lockStyles.lockText}>Débloquer avec Premium</Text>
           </View>
-          <Text style={lockStyles.lockText}>Réservé à Premium</Text>
-          <Text style={lockStyles.lockLink}>Débloquer</Text>
         </BlurView>
       </TouchableOpacity>
     </View>
@@ -50,8 +49,12 @@ export default function AnalysisResultScreen({ navigation, route }: any) {
   // Extraction des données depuis la NOUVELLE structure JSON améliorée
   const resumeVideo = analysis?.resume_video || { court: 'Résumé vidéo en cours de génération.', long: '' };
   const avisGlobal = analysis?.avis_global || { court: 'Analyse en cours de traitement.', long: '' };
-  const pourquoiCaPerce = analysis?.pourquoi_ca_perce || { preview: [], complet: [] };
-  const pourquoiCaFloppe = analysis?.pourquoi_ca_floppe || { preview: [], complet: [] };
+  const pourquoiCaPerce = analysis?.pourquoi_ca_perce || (isLimited
+    ? { preview: ['Le point fort principal de ta vidéo', 'Ce qui peut accrocher ton audience'], complet: [] }
+    : { preview: [], complet: [] });
+  const pourquoiCaFloppe = analysis?.pourquoi_ca_floppe || (isLimited
+    ? { preview: ['Le point faible principal de ta vidéo', 'Ce qui peut faire décrocher ton audience'], complet: [] }
+    : { preview: [], complet: [] });
   const conseilsRapides = analysis?.conseils_rapides || (isLimited ? [
     { icone: '🎬', titre: 'Hook', texte: 'Un conseil personnalisé pour accrocher dès la 1re seconde.' },
     { icone: '✂️', titre: 'Montage', texte: 'Un conseil personnalisé pour garder le rythme.' },
@@ -628,6 +631,7 @@ export default function AnalysisResultScreen({ navigation, route }: any) {
           </PremiumLock>
 
           {/* 7️⃣ Pourquoi ça peut percer (collapsible) */}
+          <PremiumLock locked={isLimited} onUnlock={openPaywall}>
           <CollapsibleBulletsSection
             id="perce"
             title="Pourquoi ça peut percer"
@@ -638,8 +642,10 @@ export default function AnalysisResultScreen({ navigation, route }: any) {
             bulletColor="#42FFB0"
             delay={600}
           />
+          </PremiumLock>
 
           {/* 8️⃣ Pourquoi ça peut flopper (collapsible) */}
+          <PremiumLock locked={isLimited} onUnlock={openPaywall}>
           <CollapsibleBulletsSection
             id="floppe"
             title="Pourquoi ça peut flopper"
@@ -650,6 +656,8 @@ export default function AnalysisResultScreen({ navigation, route }: any) {
             bulletColor="#FF6B6B"
             delay={700}
           />
+
+          </PremiumLock>
 
           {/* 9️⃣ Conseils rapides (carrousel) */}
           <PremiumLock locked={isLimited} onUnlock={openPaywall}>
@@ -1642,40 +1650,37 @@ const lockStyles = StyleSheet.create({
   wrapper: {
     position: 'relative',
   },
-  // Les cartes ont une marge basse de 20 : le flou s'arrête au bord de la carte
+  // Le flou couvre le contenu de la carte mais laisse l'en-tête (icône + titre) visible.
+  // Les cartes ont une marge basse de 20 : le flou s'arrête au bord de la carte.
   overlayTouch: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 20,
-    borderRadius: 28,
+    top: 66,
+    left: 1,
+    right: 1,
+    bottom: 21,
+    borderBottomLeftRadius: 27,
+    borderBottomRightRadius: 27,
     overflow: 'hidden',
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(13, 0, 23, 0.35)',
+    backgroundColor: 'rgba(13, 0, 23, 0.25)',
   },
-  lockCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  lockPill: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(144, 19, 254, 0.6)',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(144, 19, 254, 0.75)',
   },
   lockText: {
     color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  lockLink: {
-    color: '#E879F9',
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   banner: {
     borderRadius: 20,
