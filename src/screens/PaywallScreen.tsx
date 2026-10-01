@@ -63,7 +63,8 @@ export default function PaywallScreen({ navigation }: PaywallScreenProps) {
   } = useRevenueCat();
 
   const packagesByPlan = { annual: annualPackage, monthly: monthlyPackage, weekly: weeklyPackage };
-  const selectedPackage = packagesByPlan[selectedPlan] ?? annualPackage ?? monthlyPackage ?? weeklyPackage;
+  // Jamais de repli sur une autre formule : on achète exactement celle choisie (bouton désactivé sinon)
+  const selectedPackage = packagesByPlan[selectedPlan] ?? null;
 
   // Prix affiché pour chaque formule (prix Apple de la boutique de l'utilisateur, sinon prix par défaut)
   const priceLabel = (plan: PlanKey) => {
