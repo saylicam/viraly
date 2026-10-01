@@ -226,6 +226,25 @@ export default function VideoAnalyzingScreen({ navigation, route }: VideoAnalyzi
         const response = await apiService.uploadVideo(videoUri);
         if (cancelled) return;
 
+        // Limite gratuite atteinte : on propose Premium
+        if (!response.success && response.code === 'FREE_LIMIT_REACHED') {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+          Alert.alert('Analyses gratuites épuisées', response.error || '', [
+            { text: 'Plus tard', style: 'cancel', onPress: () => navigation.canGoBack() && navigation.goBack() },
+            { text: 'Voir Premium', onPress: () => navigation.replace('Paywall') },
+          ]);
+          return;
+        }
+
+        // Pas connecté (mode invité) : il faut un compte
+        if (!response.success && (response.code === 'AUTH_REQUIRED' || response.code === 'AUTH_INVALID')) {
+          Alert.alert('Compte requis', 'Connecte-toi ou crée un compte gratuit pour analyser tes vidéos.', [
+            { text: 'Plus tard', style: 'cancel', onPress: () => navigation.canGoBack() && navigation.goBack() },
+            { text: 'Me connecter', onPress: () => navigation.replace('Login') },
+          ]);
+          return;
+        }
+
         if (!response.success || !response.data) {
           throw new Error(
             typeof response.error === 'string'

@@ -144,6 +144,7 @@ class ApiService {
         return {
           success: false,
           error: errorData.message || errorData.error || `Erreur HTTP ${response.status}`,
+          code: errorData.error,
         };
       }
 

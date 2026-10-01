@@ -1,8 +1,8 @@
 import React, { useState, useCallback } from 'react';
+import { pickVideo } from '../utils/pickVideo';
 import { View, Text, ScrollView, Alert, TouchableOpacity, Dimensions, StyleSheet } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
-import * as ImagePicker from 'expo-image-picker';
 import { MotiView } from 'moti';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
@@ -73,33 +73,11 @@ export default function TimelineScreen() {
     navigation.navigate('Calendar');
   };
 
-  const requestPermissions = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission requise', "L'accès à la galerie est nécessaire pour analyser tes vidéos.");
-      return false;
-    }
-    return true;
-  };
-
   const handleAnalyze = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    const hasPermission = await requestPermissions();
-    if (!hasPermission) return;
-
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Videos,
-        allowsEditing: false,
-        quality: 1,
-        videoMaxDuration: 60,
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        navigation.navigate('VideoAnalyzing', { videoUri: result.assets[0].uri });
-      }
-    } catch (error) {
-      Alert.alert('Erreur', 'Impossible de charger la vidéo. Réessaye plus tard.');
+    const video = await pickVideo();
+    if (video) {
+      navigation.navigate('VideoAnalyzing', { videoUri: video.uri });
     }
   };
 

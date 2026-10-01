@@ -5,6 +5,10 @@ import { RootNavigator } from './src/navigation';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AuthProvider } from './src/context/AuthContext';
 import { RevenueCatProvider } from './src/context/RevenueCatContext';
+import { LogBox } from 'react-native';
+
+// Annuler un achat n'est pas une erreur : on masque l'écran rouge en développement
+LogBox.ignoreLogs(['Purchase was cancelled']);
 
 /**
  * App principale - Navigation simplifiée

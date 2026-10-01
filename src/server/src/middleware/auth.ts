@@ -14,6 +14,7 @@ if (getApps().length === 0) {
 
 export interface AuthedRequest extends Request {
   uid?: string;
+  isPremium?: boolean;
 }
 
 /** Refuse la requête si l'utilisateur n'envoie pas un jeton Firebase valide. */
@@ -73,22 +74,34 @@ const hasActiveEntitlement = async (uid: string): Promise<boolean> => {
   return active;
 };
 
-/** Refuse la requête si l'utilisateur n'a pas d'abonnement Premium actif. */
-export const requireSubscription = async (req: AuthedRequest, res: Response, next: NextFunction) => {
+// Analyses gratuites : nombre par utilisateur et par jour (en mémoire, remis à zéro au redémarrage)
+const freeUsage = new Map<string, { day: string; count: number }>();
+
+const today = () => new Date().toISOString().slice(0, 10);
+
+const consumeFreeAnalysis = (uid: string): boolean => {
+  const day = today();
+  const entry = freeUsage.get(uid);
+  const count = entry && entry.day === day ? entry.count : 0;
+  if (count >= env.FREE_ANALYSES_PER_DAY) return false;
+  freeUsage.set(uid, { day, count: count + 1 });
+  return true;
+};
+
+/**
+ * Détermine si l'utilisateur est abonné (req.isPremium).
+ * - Abonné : analyse complète, sans limite.
+ * - Non abonné : analyse partielle (le détail est réservé à Premium),
+ *   limitée à FREE_ANALYSES_PER_DAY par jour pour maîtriser le coût.
+ */
+export const checkSubscription = async (req: AuthedRequest, res: Response, next: NextFunction) => {
   if (env.REQUIRE_SUBSCRIPTION === 'false') {
+    req.isPremium = true;
     return next();
   }
 
   try {
-    const active = await hasActiveEntitlement(req.uid as string);
-    if (!active) {
-      return res.status(403).json({
-        success: false,
-        error: 'SUBSCRIPTION_REQUIRED',
-        message: 'Cette fonctionnalité est réservée aux abonnés Viraly Premium.',
-      });
-    }
-    next();
+    req.isPremium = await hasActiveEntitlement(req.uid as string);
   } catch (error) {
     console.error('❌ Vérification abonnement impossible:', error);
     return res.status(503).json({
@@ -97,4 +110,16 @@ export const requireSubscription = async (req: AuthedRequest, res: Response, nex
       message: "Impossible de vérifier ton abonnement pour le moment. Réessaie dans un instant.",
     });
   }
+
+  // Seul l'envoi d'une vidéo consomme une analyse gratuite
+  const isAnalysis = req.method === 'POST';
+  if (!req.isPremium && isAnalysis && !consumeFreeAnalysis(req.uid as string)) {
+    return res.status(429).json({
+      success: false,
+      error: 'FREE_LIMIT_REACHED',
+      message: `Tu as utilisé tes ${env.FREE_ANALYSES_PER_DAY} analyses gratuites du jour. Passe à Premium pour analyser sans limite.`,
+    });
+  }
+
+  next();
 };

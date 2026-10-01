@@ -4,6 +4,34 @@ import path from 'path';
 import fs from 'fs';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { env } from '../env';
+import type { AuthedRequest } from '../middleware/auth';
+
+/** Parties de l'analyse réservées aux abonnés Premium (retirées pour les autres). */
+const PREMIUM_FIELDS = [
+  'indice_risque',
+  'indice_risque_detail',
+  'score_emotionnel',
+  'potentiel_partage',
+  'conseils_rapides',
+  'optimisation_express',
+  'conseils_amelioration',
+  'inspiration_ia',
+  'caption',
+  'hashtags',
+  'chance_trend',
+  'vues_attendues',
+  'meilleurs_horaires',
+];
+
+/** Version gratuite : score, verdict et résumé visibles ; le détail est retiré. */
+const toFreeAnalysis = (analysis: any) => {
+  const free: any = { ...analysis, limited: true };
+  for (const field of PREMIUM_FIELDS) delete free[field];
+  for (const key of ['pourquoi_ca_perce', 'pourquoi_ca_floppe']) {
+    if (free[key]?.preview) free[key] = { preview: free[key].preview, complet: free[key].preview };
+  }
+  return free;
+};
 
 const router = express.Router();
 
@@ -1202,7 +1230,7 @@ Tu dois évaluer la vidéo comme un analyste TikTok professionnel. La distributi
         fileName: originalname,
         fileSize: size,
         mimeType: mimetype,
-        analysis: normalizedAnalysis,
+        analysis: (req as AuthedRequest).isPremium ? normalizedAnalysis : toFreeAnalysis(normalizedAnalysis),
         timestamp: new Date().toISOString(),
       },
     };

@@ -211,6 +211,8 @@ export interface ApiResponse<T> {
   data?: T;
   error?: string;
   message?: string;
+  /** Code d'erreur renvoyé par le serveur (ex. FREE_LIMIT_REACHED, AUTH_REQUIRED) */
+  code?: string;
 }
 
 // Subscription types

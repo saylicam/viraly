@@ -6,6 +6,8 @@ import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Video as ExpoVideo, ResizeMode } from 'expo-av';
 import { theme } from '../theme';
+import { useRevenueCat } from '../context/RevenueCatContext';
+import { Lock, Crown, RefreshCw } from 'lucide-react-native';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width - 48; // 24px padding de chaque côté
@@ -13,9 +15,33 @@ const CARD_WIDTH = width - 48; // 24px padding de chaque côté
 // Palette de couleurs pour hashtags
 const HASHTAG_COLORS = ['#A855F7', '#E879F9', '#D946EF', '#9333EA', '#7C3AED', '#4C1D95'];
 
+/** Recouvre une section d'un flou + cadenas pour les utilisateurs non abonnés. */
+const PremiumLock = ({ locked, onUnlock, children }: { locked: boolean; onUnlock: () => void; children: React.ReactNode }) => {
+  if (!locked) return <>{children}</>;
+  return (
+    <View style={lockStyles.wrapper}>
+      <View pointerEvents="none">{children}</View>
+      <TouchableOpacity activeOpacity={0.85} onPress={onUnlock} style={lockStyles.overlayTouch}>
+        <BlurView intensity={28} tint="dark" style={lockStyles.overlay}>
+          <View style={lockStyles.lockCircle}>
+            <Lock size={18} color="#FFFFFF" />
+          </View>
+          <Text style={lockStyles.lockText}>Réservé à Premium</Text>
+          <Text style={lockStyles.lockLink}>Débloquer</Text>
+        </BlurView>
+      </TouchableOpacity>
+    </View>
+  );
+};
+
 export default function AnalysisResultScreen({ navigation, route }: any) {
   const { result, videoUri } = route.params;
   const analysis = result.premium || result;
+  const { isPremium } = useRevenueCat();
+  // Résultat partiel (utilisateur non abonné au moment de l'analyse)
+  const isLimited = analysis?.limited === true;
+  const openPaywall = () => navigation.navigate('Paywall');
+  const rerunFullAnalysis = () => navigation.replace('VideoAnalyzing', { videoUri });
   const videoRef = React.useRef<ExpoVideo>(null);
   
   // États pour les sections collapsibles
@@ -26,8 +52,14 @@ export default function AnalysisResultScreen({ navigation, route }: any) {
   const avisGlobal = analysis?.avis_global || { court: 'Analyse en cours de traitement.', long: '' };
   const pourquoiCaPerce = analysis?.pourquoi_ca_perce || { preview: [], complet: [] };
   const pourquoiCaFloppe = analysis?.pourquoi_ca_floppe || { preview: [], complet: [] };
-  const conseilsRapides = analysis?.conseils_rapides || [];
-  const conseilsAmelioration = analysis?.conseils_amelioration || { preview: [], complet: [] };
+  const conseilsRapides = analysis?.conseils_rapides || (isLimited ? [
+    { icone: '🎬', titre: 'Hook', texte: 'Un conseil personnalisé pour accrocher dès la 1re seconde.' },
+    { icone: '✂️', titre: 'Montage', texte: 'Un conseil personnalisé pour garder le rythme.' },
+    { icone: '🎵', titre: 'Audio', texte: 'Un conseil personnalisé sur le son.' },
+  ] : []);
+  const conseilsAmelioration = analysis?.conseils_amelioration || (isLimited
+    ? { preview: ['Conseil détaillé personnalisé n°1', 'Conseil détaillé personnalisé n°2'], complet: [] }
+    : { preview: [], complet: [] });
   const scoreEmotionnel = analysis?.score_emotionnel || { confiance_charisme: 60, intensite: 65, impact_visuel: 60, nostalgie: 50 };
   const microMetrics = analysis?.micro_metrics || { potentiel_viral: 'Moyen', watchtime_estime: '5-8s', audio_tendance: 'Oui', public_cible: '18-25 ans', type_engagement: 'likes / commentaires' };
   const tagsRapides = analysis?.tags_rapides || { potentiel_viral: 'Moyen', watchtime_optimal: '5-8s', audio_tendance: 'Oui', public_cible: '18-25 ans', type_engagement: 'likes / commentaires' };
@@ -36,16 +68,16 @@ export default function AnalysisResultScreen({ navigation, route }: any) {
   const indiceRisqueDetail = analysis?.indice_risque_detail || '';
   const scoreTitre = analysis?.score_titre || '';
   const microIndicateurs = analysis?.micro_indicateurs || { audio: 65, montage: 60, trendiness: 70 };
-  const inspirationIa = analysis?.inspiration_ia || [];
+  const inspirationIa = analysis?.inspiration_ia || (isLimited ? ['Idée de vidéo alternative n°1', 'Idée de vidéo alternative n°2', 'Idée de vidéo alternative n°3'] : []);
   const punchline = analysis?.punchline || 'Ton edit est vraiment puissant : rythme, vibe, synchro…';
   const verdictFinal = analysis?.verdict_final || { emoji: '👍', titre: 'Très bon début !', message: 'Avec quelques ajustements, tu peux viser le FYP facilement.' };
   const caption = analysis?.caption || 'Caption optimisée en cours de génération.';
-  const hashtags = analysis?.hashtags || [];
+  const hashtags = analysis?.hashtags || (isLimited ? ['#fyp', '#pourtoi', '#viral', '#tiktokfr', '#trend'] : []);
   const scoreSur100 = analysis?.score_sur_100 || 55;
   const phraseMotivante = analysis?.phrase_motivante || '';
   const typeVideoDetecte = analysis?.type_video_detecte || '🎥 Autre';
   const potentielPartage = analysis?.potentiel_partage || { potentiel_like: 50, potentiel_commentaire: 40, potentiel_partage: 30 };
-  const optimisationExpress = analysis?.optimisation_express || [];
+  const optimisationExpress = analysis?.optimisation_express || (isLimited ? ['Retouche rapide n°1 pour ta vidéo', 'Retouche rapide n°2 pour ta vidéo', 'Retouche rapide n°3 pour ta vidéo'] : []);
   const chanceTrend = analysis?.chance_trend || '30%';
   const vuesAttendues = analysis?.vues_attendues || '20k-200k';
   const niveauConfiance = analysis?.niveau_confiance || 'Moyen';
@@ -298,7 +330,7 @@ export default function AnalysisResultScreen({ navigation, route }: any) {
                   </View>
                   <View style={styles.iaTag}>
                     <Sparkles size={12} color="#FFFFFF" />
-                    <Text style={styles.iaTagText}>Analyse IA complète</Text>
+                    <Text style={styles.iaTagText}>{isLimited ? 'Aperçu gratuit' : 'Analyse IA complète'}</Text>
                   </View>
                 </View>
                 <View style={styles.videoWrapper}>
@@ -459,7 +491,36 @@ export default function AnalysisResultScreen({ navigation, route }: any) {
             delay={400}
           />
 
+          {/* Bannière Premium (résultat partiel) */}
+          {isLimited && (
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={isPremium ? rerunFullAnalysis : openPaywall}
+              style={lockStyles.banner}
+            >
+              <LinearGradient
+                colors={theme.colors.gradient.button}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={lockStyles.bannerGradient}
+              >
+                {isPremium ? <RefreshCw size={22} color="#FFFFFF" /> : <Crown size={22} color="#FFFFFF" />}
+                <View style={{ flex: 1 }}>
+                  <Text style={lockStyles.bannerTitle}>
+                    {isPremium ? 'Tu es Premium !' : "Débloque l'analyse complète"}
+                  </Text>
+                  <Text style={lockStyles.bannerText}>
+                    {isPremium
+                      ? "Relance l'analyse de cette vidéo pour voir tous les conseils."
+                      : 'Conseils détaillés, caption, hashtags, meilleurs horaires et prédictions.'}
+                  </Text>
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
+          )}
+
           {/* 5️⃣ Indice de risque */}
+          <PremiumLock locked={isLimited} onUnlock={openPaywall}>
           <MotiView
             from={{ opacity: 0, translateY: 20 }}
             animate={{ opacity: 1, translateY: 0 }}
@@ -514,6 +575,8 @@ export default function AnalysisResultScreen({ navigation, route }: any) {
             </View>
           </MotiView>
 
+          </PremiumLock>
+
           {/* Type de vidéo détecté */}
           <MotiView
             from={{ opacity: 0, translateY: 20, scale: 0.98 }}
@@ -532,6 +595,7 @@ export default function AnalysisResultScreen({ navigation, route }: any) {
           </MotiView>
 
           {/* Potentiel de partage */}
+          <PremiumLock locked={isLimited} onUnlock={openPaywall}>
           <MotiView
             from={{ opacity: 0, translateY: 20, scale: 0.98 }}
             animate={{ opacity: 1, translateY: 0, scale: 1 }}
@@ -561,6 +625,8 @@ export default function AnalysisResultScreen({ navigation, route }: any) {
             </View>
           </MotiView>
 
+          </PremiumLock>
+
           {/* 7️⃣ Pourquoi ça peut percer (collapsible) */}
           <CollapsibleBulletsSection
             id="perce"
@@ -586,6 +652,7 @@ export default function AnalysisResultScreen({ navigation, route }: any) {
           />
 
           {/* 9️⃣ Conseils rapides (carrousel) */}
+          <PremiumLock locked={isLimited} onUnlock={openPaywall}>
           {conseilsRapides.length > 0 && (
             <MotiView
               from={{ opacity: 0, translateY: 20 }}
@@ -623,7 +690,10 @@ export default function AnalysisResultScreen({ navigation, route }: any) {
             </MotiView>
           )}
 
+          </PremiumLock>
+
           {/* Optimisation express (10 secondes) */}
+          <PremiumLock locked={isLimited} onUnlock={openPaywall}>
           {optimisationExpress.length > 0 && (
             <MotiView
               from={{ opacity: 0, translateY: 20, scale: 0.98 }}
@@ -656,7 +726,10 @@ export default function AnalysisResultScreen({ navigation, route }: any) {
             </MotiView>
           )}
 
+          </PremiumLock>
+
           {/* 🔟 Conseils IA détaillés (collapsible) */}
+          <PremiumLock locked={isLimited} onUnlock={openPaywall}>
           <CollapsibleBulletsSection
             id="conseils"
             title="Conseils d'amélioration"
@@ -668,7 +741,10 @@ export default function AnalysisResultScreen({ navigation, route }: any) {
             delay={900}
           />
 
+          </PremiumLock>
+
           {/* 1️⃣1️⃣ Inspiration IA / Idées Alternatives */}
+          <PremiumLock locked={isLimited} onUnlock={openPaywall}>
           {inspirationIa.length > 0 && (
             <MotiView
               from={{ opacity: 0, translateY: 20 }}
@@ -703,7 +779,10 @@ export default function AnalysisResultScreen({ navigation, route }: any) {
             </MotiView>
           )}
 
+          </PremiumLock>
+
           {/* 1️⃣2️⃣ Caption optimisée */}
+          <PremiumLock locked={isLimited} onUnlock={openPaywall}>
           <MotiView
             from={{ opacity: 0, translateY: 20 }}
             animate={{ opacity: 1, translateY: 0 }}
@@ -720,7 +799,10 @@ export default function AnalysisResultScreen({ navigation, route }: any) {
             </View>
           </MotiView>
 
+          </PremiumLock>
+
           {/* 1️⃣3️⃣ Hashtags multicolores */}
+          <PremiumLock locked={isLimited} onUnlock={openPaywall}>
           {hashtags.length > 0 && (
             <MotiView
               from={{ opacity: 0, translateY: 20 }}
@@ -772,7 +854,10 @@ export default function AnalysisResultScreen({ navigation, route }: any) {
             </MotiView>
           )}
 
+          </PremiumLock>
+
           {/* 1️⃣4️⃣ Stats prédictives */}
+          <PremiumLock locked={isLimited} onUnlock={openPaywall}>
           <MotiView
             from={{ opacity: 0, translateY: 20 }}
             animate={{ opacity: 1, translateY: 0 }}
@@ -798,7 +883,10 @@ export default function AnalysisResultScreen({ navigation, route }: any) {
             </View>
           </MotiView>
 
+          </PremiumLock>
+
           {/* 1️⃣5️⃣ Meilleurs horaires de publication */}
+          <PremiumLock locked={isLimited} onUnlock={openPaywall}>
           {meilleursHoraires.length > 0 && (
             <MotiView
               from={{ opacity: 0, translateY: 20 }}
@@ -830,6 +918,8 @@ export default function AnalysisResultScreen({ navigation, route }: any) {
               </View>
             </MotiView>
           )}
+
+          </PremiumLock>
 
           {/* 1️⃣6️⃣ Message final motivant */}
           <MotiView
@@ -1548,3 +1638,65 @@ const styles = StyleSheet.create({
   },
 });
 
+const lockStyles = StyleSheet.create({
+  wrapper: {
+    position: 'relative',
+  },
+  // Les cartes ont une marge basse de 20 : le flou s'arrête au bord de la carte
+  overlayTouch: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 20,
+    borderRadius: 28,
+    overflow: 'hidden',
+  },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(13, 0, 23, 0.35)',
+  },
+  lockCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(144, 19, 254, 0.6)',
+  },
+  lockText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  lockLink: {
+    color: '#E879F9',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  banner: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    marginBottom: 20,
+  },
+  bannerGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    padding: 18,
+  },
+  bannerTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '800',
+    marginBottom: 2,
+  },
+  bannerText: {
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+});

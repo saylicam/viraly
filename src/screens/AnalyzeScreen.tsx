@@ -1,13 +1,12 @@
 import React, { useState } from 'react';
 import { View, Text, Alert, ScrollView, TouchableOpacity, StyleSheet, Dimensions, SafeAreaView } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import * as ImagePicker from 'expo-image-picker';
 import { Sparkles, RefreshCw, Upload } from 'lucide-react-native';
 
 import { NeonButton } from '../components/ui/NeonButton';
 import { VideoPreview } from '../components/analysis/VideoPreview';
 import { AnalyzeInfo } from '../components/analysis/AnalyzeInfo';
-import { useRevenueCat } from '../context/RevenueCatContext';
+import { pickVideo } from '../utils/pickVideo';
 
 const { width } = Dimensions.get('window');
 
@@ -15,55 +14,15 @@ export default function AnalyzeScreen({ navigation }: any) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
   const [videoInfo, setVideoInfo] = useState<{ name?: string; size?: number } | null>(null);
-  const { isPremium, isLoading: subscriptionLoading } = useRevenueCat();
-
-  // L'analyse est réservée aux abonnés : sinon, on affiche le paywall
-  const ensurePremium = () => {
-    if (subscriptionLoading) {
-      Alert.alert('Un instant…', 'Vérification de ton abonnement en cours, réessaie dans une seconde.');
-      return false;
-    }
-    if (!isPremium) {
-      navigation.navigate('Paywall');
-      return false;
-    }
-    return true;
-  };
-
-  const requestPermissions = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission requise', "L'accès à la galerie est nécessaire pour analyser tes vidéos.");
-      return false;
-    }
-    return true;
-  };
-
   const handleSelectVideo = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    if (!ensurePremium()) return;
-    const hasPermission = await requestPermissions();
-    if (!hasPermission) return;
-
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Videos,
-        allowsEditing: false,
-        quality: 1,
-        videoMaxDuration: 60,
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        const asset = result.assets[0];
-        setSelectedVideo(asset.uri);
-        setVideoInfo({
-          name: asset.fileName || asset.uri.split('/').pop(),
-          size: asset.fileSize,
-        });
-      }
-    } catch (error) {
-      Alert.alert('Erreur', 'Impossible de charger la vidéo. Réessaye plus tard.');
-    }
+    const video = await pickVideo();
+    if (!video) return;
+    setSelectedVideo(video.uri);
+    setVideoInfo({
+      name: video.fileName || video.uri.split('/').pop(),
+      size: video.fileSize,
+    });
   };
 
   const handleRemoveVideo = () => {
@@ -74,7 +33,6 @@ export default function AnalyzeScreen({ navigation }: any) {
 
   const analyzeVideo = async () => {
     if (!selectedVideo || isAnalyzing) return;
-    if (!ensurePremium()) return;
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     setIsAnalyzing(true);

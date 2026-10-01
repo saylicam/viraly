@@ -42,6 +42,8 @@ const envSchema = z.object({
   REVENUECAT_ENTITLEMENT_ID: z.string().default('premium'),
   // Mettre "false" uniquement en développement pour tester l'analyse sans abonnement
   REQUIRE_SUBSCRIPTION: z.enum(['true', 'false']).default('true'),
+  // Nombre d'analyses partielles gratuites par jour pour un non-abonné
+  FREE_ANALYSES_PER_DAY: z.coerce.number().int().min(0).default(3),
 
   // Google Gemini API (supports both GEMINI_API_KEY and EXPO_PUBLIC_GEMINI_API_KEY)
   GEMINI_API_KEY: z.string().optional(),
