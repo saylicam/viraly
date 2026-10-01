@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { env } from './env';
 import analyzeRoutes from './routes/analyze';
+import legalRoutes from './routes/legal';
 import { requireAuth, checkSubscription } from './middleware/auth';
 
 const app = express();
@@ -43,6 +44,9 @@ app.get('/health', (req, res) => {
 
 // API routes : analyse réservée aux utilisateurs connectés ; complète pour les abonnés, partielle sinon
 app.use('/api/analyze', requireAuth, checkSubscription, analyzeRoutes);
+
+// Pages publiques : politique de confidentialité et assistance (liens App Store)
+app.use('/', legalRoutes);
 
 // Error handling middleware
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

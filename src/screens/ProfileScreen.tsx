@@ -314,7 +314,7 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
           <View style={styles.settingsContainer}>
             <Text style={styles.settingsTitle}>Support</Text>
             <GlassCard className="px-4 py-2">
-              <TouchableOpacity style={styles.settingItem}>
+              <TouchableOpacity style={styles.settingItem} onPress={() => Linking.openURL('https://viraly-production-b0cd.up.railway.app/support')}>
                 <View style={styles.settingLeft}>
                   <View style={styles.settingIconContainer}>
                     <Ionicons name="help-circle-outline" size={20} color={theme.colors.accent} />
@@ -324,7 +324,7 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
                 <Ionicons name="chevron-forward" size={16} color={theme.colors.text.tertiary} />
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.settingItem}>
+              <TouchableOpacity style={styles.settingItem} onPress={() => Linking.openURL('https://viraly-production-b0cd.up.railway.app/confidentialite')}>
                 <View style={styles.settingLeft}>
                   <View style={styles.settingIconContainer}>
                     <Ionicons name="shield-outline" size={20} color={theme.colors.warning} />

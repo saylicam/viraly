@@ -10,7 +10,7 @@ const { width } = Dimensions.get('window');
 // Liens légaux affichés sous le bouton d'achat (exigés par Apple pour les abonnements)
 const TERMS_URL = 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
 // TODO: remplacer par l'URL de ta politique de confidentialité avant la soumission à Apple
-const PRIVACY_URL = 'https://viraly.app/confidentialite';
+const PRIVACY_URL = 'https://viraly-production-b0cd.up.railway.app/confidentialite';
 
 type PlanKey = 'annual' | 'monthly' | 'weekly';
 
