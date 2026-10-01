@@ -16,8 +16,10 @@ interface RevenueCatContextType {
   isPremium: boolean;
   isLoading: boolean;
   currentOffering: PurchasesOffering | null;
+  weeklyPackage: PurchasesPackage | null;
   monthlyPackage: PurchasesPackage | null;
   annualPackage: PurchasesPackage | null;
+  weeklyPrice: string | null;
   monthlyPrice: string | null;
   annualPrice: string | null;
   customerInfo: CustomerInfo | null;
@@ -141,6 +143,7 @@ export const RevenueCatProvider: React.FC<{ children: ReactNode }> = ({ children
     return applyCustomerInfo(info);
   };
 
+  const weeklyPackage = currentOffering?.weekly ?? null;
   const monthlyPackage = currentOffering?.monthly ?? null;
   const annualPackage = currentOffering?.annual ?? null;
 
@@ -148,8 +151,10 @@ export const RevenueCatProvider: React.FC<{ children: ReactNode }> = ({ children
     isPremium,
     isLoading,
     currentOffering,
+    weeklyPackage,
     monthlyPackage,
     annualPackage,
+    weeklyPrice: weeklyPackage?.product.priceString ?? null,
     monthlyPrice: monthlyPackage?.product.priceString ?? null,
     annualPrice: annualPackage?.product.priceString ?? null,
     customerInfo,

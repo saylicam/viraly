@@ -12,7 +12,7 @@ const TERMS_URL = 'https://www.apple.com/legal/internet-services/itunes/dev/stde
 // TODO: remplacer par l'URL de ta politique de confidentialité avant la soumission à Apple
 const PRIVACY_URL = 'https://viraly.app/confidentialite';
 
-type PlanKey = 'annual' | 'monthly';
+type PlanKey = 'annual' | 'monthly' | 'weekly';
 
 interface PaywallScreenProps {
   navigation: any;
@@ -50,8 +50,10 @@ export default function PaywallScreen({ navigation }: PaywallScreenProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<PlanKey>('annual');
   const {
+    weeklyPackage,
     monthlyPackage,
     annualPackage,
+    weeklyPrice,
     monthlyPrice,
     annualPrice,
     purchasePackage,
@@ -60,7 +62,15 @@ export default function PaywallScreen({ navigation }: PaywallScreenProps) {
     isLoading: revenueCatLoading,
   } = useRevenueCat();
 
-  const selectedPackage = selectedPlan === 'annual' ? (annualPackage ?? monthlyPackage) : (monthlyPackage ?? annualPackage);
+  const packagesByPlan = { annual: annualPackage, monthly: monthlyPackage, weekly: weeklyPackage };
+  const selectedPackage = packagesByPlan[selectedPlan] ?? annualPackage ?? monthlyPackage ?? weeklyPackage;
+
+  // Prix affiché pour chaque formule (prix Apple de la boutique de l'utilisateur, sinon prix par défaut)
+  const priceLabel = (plan: PlanKey) => {
+    if (plan === 'annual') return `${annualPrice ?? '49,99 €'} par an`;
+    if (plan === 'monthly') return `${monthlyPrice ?? '7,99 €'} par mois`;
+    return `${weeklyPrice ?? '3,99 €'} par semaine`;
+  };
   const hasFreeTrial = !!selectedPackage?.product.introPrice && selectedPackage.product.introPrice.price === 0;
 
   // Réduction de l'annuel par rapport à 12 mois de mensuel (ex : -48 %)
@@ -317,6 +327,14 @@ export default function PaywallScreen({ navigation }: PaywallScreenProps) {
           <View style={styles.plansRow}>
             {([
               {
+                key: 'weekly' as PlanKey,
+                label: 'Hebdo',
+                price: weeklyPrice ?? '3,99 €',
+                period: '/ semaine',
+                sub: 'Sans engagement',
+                badge: null,
+              },
+              {
                 key: 'annual' as PlanKey,
                 label: 'Annuel',
                 price: annualPrice ?? '49,99 €',
@@ -350,10 +368,10 @@ export default function PaywallScreen({ navigation }: PaywallScreenProps) {
                     </View>
                   )}
                   <Text style={styles.planLabel}>{plan.label}</Text>
-                  <Text style={styles.planPrice}>
+                  <Text style={styles.planPrice} numberOfLines={1} adjustsFontSizeToFit>
                     {revenueCatLoading ? '…' : plan.price}
-                    <Text style={styles.planPeriod}> {plan.period}</Text>
                   </Text>
+                  <Text style={styles.planPeriod}>{plan.period}</Text>
                   {plan.sub && <Text style={styles.planSub}>{plan.sub}</Text>}
                 </TouchableOpacity>
               );
@@ -415,8 +433,8 @@ export default function PaywallScreen({ navigation }: PaywallScreenProps) {
           <View style={styles.termsSection}>
             <Text style={styles.termsText}>
               {hasFreeTrial
-                ? `3 jours gratuits, puis ${selectedPlan === 'annual' ? `${annualPrice ?? '49,99 €'} par an` : `${monthlyPrice ?? '7,99 €'} par mois`}.`
-                : `${selectedPlan === 'annual' ? `${annualPrice ?? '49,99 €'} par an` : `${monthlyPrice ?? '7,99 €'} par mois`}.`}
+                ? `3 jours gratuits, puis ${priceLabel(selectedPlan)}.`
+                : `${priceLabel(selectedPlan)}.`}
             </Text>
             <Text style={styles.termsText}>
               Renouvellement automatique, résiliable à tout moment dans les réglages de ton compte Apple au moins 24 h avant la fin de la période.
@@ -699,13 +717,13 @@ const styles = StyleSheet.create({
   // Choix de la formule
   plansRow: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 8,
     marginBottom: 16,
   },
   planCard: {
     flex: 1,
     paddingVertical: 14,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     borderRadius: 16,
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.12)',
@@ -736,12 +754,12 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   planPrice: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '800',
     color: '#FFFFFF',
   },
   planPeriod: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '500',
     color: 'rgba(255, 255, 255, 0.6)',
   },
