@@ -1,4 +1,13 @@
 import { ApiResponse, AnalysisResult, VideoUploadResponse } from '../types';
+import { auth } from '../../firebase';
+
+/** Jeton Firebase de l'utilisateur connecté, envoyé au serveur pour prouver son identité. */
+const getAuthHeaders = async (): Promise<Record<string, string>> => {
+  const user = auth.currentUser;
+  if (!user) return {};
+  const token = await user.getIdToken();
+  return { Authorization: `Bearer ${token}` };
+};
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3333';
 
@@ -21,11 +30,12 @@ class ApiService {
     try {
       const url = `${this.baseUrl}${endpoint}`;
       const response = await fetch(url, {
+        ...options,
         headers: {
           'Content-Type': 'application/json',
-          ...options.headers,
+          ...(await getAuthHeaders()),
+          ...(options.headers as Record<string, string>),
         },
-        ...options,
       });
 
       const data = await response.json();
@@ -33,7 +43,7 @@ class ApiService {
       if (!response.ok) {
         return {
           success: false,
-          error: data.error || 'Une erreur est survenue',
+          error: data.message || data.error || 'Une erreur est survenue',
         };
       }
 
@@ -107,6 +117,7 @@ class ApiService {
       
       const response = await fetch(url, {
         method: 'POST',
+        headers: await getAuthHeaders(),
         body: formData,
         signal: controller.signal,
         // Don't set Content-Type header - let React Native set it with boundary
@@ -132,7 +143,7 @@ class ApiService {
         console.error('❌ Upload error:', errorData);
         return {
           success: false,
-          error: errorData.error || errorData.message || `Erreur HTTP ${response.status}`,
+          error: errorData.message || errorData.error || `Erreur HTTP ${response.status}`,
         };
       }
 
@@ -187,44 +198,6 @@ class ApiService {
     optimizationTips: string[];
   }>> {
     return this.request('/api/analyze/suggestions');
-  }
-
-  // Payment methods
-  async createPaymentIntent(customerId: string): Promise<ApiResponse<{
-    clientSecret: string;
-    paymentIntentId: string;
-  }>> {
-    return this.request('/api/payments/create-payment-intent', {
-      method: 'POST',
-      body: JSON.stringify({ customerId }),
-    });
-  }
-
-  async createCustomer(email: string, name: string): Promise<ApiResponse<{
-    customerId: string;
-    email: string;
-  }>> {
-    return this.request('/api/payments/create-customer', {
-      method: 'POST',
-      body: JSON.stringify({ email, name }),
-    });
-  }
-
-  async getSubscription(customerId: string): Promise<ApiResponse<{
-    isActive: boolean;
-    subscription: any;
-  }>> {
-    return this.request(`/api/payments/subscription/${customerId}`);
-  }
-
-  async cancelSubscription(subscriptionId: string): Promise<ApiResponse<{
-    success: boolean;
-    subscription: any;
-  }>> {
-    return this.request('/api/payments/cancel-subscription', {
-      method: 'POST',
-      body: JSON.stringify({ subscriptionId }),
-    });
   }
 }
 

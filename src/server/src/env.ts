@@ -34,11 +34,15 @@ const envSchema = z.object({
   PORT: z.string().default('3333'),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   
-  // Stripe Configuration
-  STRIPE_SECRET_KEY: z.string().min(1, 'STRIPE_SECRET_KEY is required'),
-  STRIPE_WEBHOOK_SECRET: z.string().min(1, 'STRIPE_WEBHOOK_SECRET is required'),
-  STRIPE_PRICE_ID: z.string().min(1, 'STRIPE_PRICE_ID is required'),
-  
+  // Authentification : vérification des jetons Firebase des utilisateurs de l'app
+  FIREBASE_PROJECT_ID: z.string().default('viraly-01'),
+
+  // Abonnement : vérification auprès de RevenueCat (clé SECRÈTE sk_..., jamais dans l'app)
+  REVENUECAT_SECRET_API_KEY: z.string().optional(),
+  REVENUECAT_ENTITLEMENT_ID: z.string().default('premium'),
+  // Mettre "false" uniquement en développement pour tester l'analyse sans abonnement
+  REQUIRE_SUBSCRIPTION: z.enum(['true', 'false']).default('true'),
+
   // Google Gemini API (supports both GEMINI_API_KEY and EXPO_PUBLIC_GEMINI_API_KEY)
   GEMINI_API_KEY: z.string().optional(),
   EXPO_PUBLIC_GEMINI_API_KEY: z.string().optional(),
@@ -67,11 +71,15 @@ const parseEnv = () => {
       throw new Error('GEMINI_API_KEY or EXPO_PUBLIC_GEMINI_API_KEY is required');
     }
     
+    if (parsed.REQUIRE_SUBSCRIPTION === 'true' && !parsed.REVENUECAT_SECRET_API_KEY) {
+      throw new Error('REVENUECAT_SECRET_API_KEY is required when REQUIRE_SUBSCRIPTION=true');
+    }
+
     return parsed;
   } catch (error) {
     console.error('❌ Invalid environment variables:');
     if (error instanceof z.ZodError) {
-      error.errors.forEach((err) => {
+      error.issues.forEach((err) => {
         console.error(`  - ${err.path.join('.')}: ${err.message}`);
       });
     } else {

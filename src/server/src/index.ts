@@ -3,13 +3,13 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { env } from './env';
-import { stripe } from './stripe';
 import analyzeRoutes from './routes/analyze';
-import videoRoutes from './routes/video';
-import paymentsRoutes from './routes/payments';
-import webhookRoutes from './routes/webhook';
+import { requireAuth, requireSubscription } from './middleware/auth';
 
 const app = express();
+
+// Derrière le proxy HTTPS de Railway : nécessaire pour que le rate limiting voie la vraie IP
+app.set('trust proxy', 1);
 
 // Security middleware
 app.use(helmet());
@@ -41,11 +41,8 @@ app.get('/health', (req, res) => {
   });
 });
 
-// API routes
-app.use('/api/analyze', analyzeRoutes);
-app.use('/api/video', videoRoutes);
-app.use('/api/payments', paymentsRoutes);
-app.use('/api/webhook', webhookRoutes);
+// API routes : l'analyse est réservée aux utilisateurs connectés ET abonnés
+app.use('/api/analyze', requireAuth, requireSubscription, analyzeRoutes);
 
 // Error handling middleware
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -67,7 +64,7 @@ const PORT = parseInt(env.PORT);
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on http://0.0.0.0:${PORT}`);
   console.log(`📊 Environment: ${env.NODE_ENV}`);
-  console.log(`🔑 Stripe configured: ${stripe ? 'Yes' : 'No'}`);
+  console.log(`🔐 Abonnement requis: ${env.REQUIRE_SUBSCRIPTION === 'true' ? 'Oui' : 'Non (mode test)'}`);
   console.log(`🤖 Gemini API configured: ${env.GEMINI_API_KEY ? 'Yes' : 'No'}`);
   console.log(`⏱️  Server timeout: 5 minutes (300000ms)`);
 });
