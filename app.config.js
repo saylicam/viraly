@@ -16,7 +16,8 @@ module.exports = () => {
       assetBundlePatterns: ["**/*"],
 
       ios: {
-        supportsTablet: true,
+        // iPhone uniquement (évite d'avoir à fournir des captures iPad)
+        supportsTablet: false,
         bundleIdentifier: "com.viraly.app",
         // Configuration requise pour valider le chiffrement chez Apple
         infoPlist: {
@@ -34,8 +35,26 @@ module.exports = () => {
       },
 
       plugins: [
-        "expo-camera",
-        "expo-media-library",
+        [
+          "expo-image-picker",
+          {
+            photosPermission: "Viraly a besoin d'accéder à tes vidéos pour que tu puisses choisir celle à analyser.",
+          }
+        ],
+        [
+          "expo-camera",
+          {
+            cameraPermission: "Viraly utilise la caméra pour filmer une vidéo à analyser.",
+            microphonePermission: "Viraly utilise le micro pour enregistrer le son de tes vidéos.",
+          }
+        ],
+        [
+          "expo-media-library",
+          {
+            photosPermission: "Viraly a besoin d'accéder à tes vidéos pour que tu puisses choisir celle à analyser.",
+            savePhotosPermission: "Viraly peut enregistrer des fichiers dans ta photothèque.",
+          }
+        ],
         "expo-apple-authentication",
         "expo-web-browser"
       ],
