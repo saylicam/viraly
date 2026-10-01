@@ -24,8 +24,6 @@ export const pickVideo = async (): Promise<PickedVideo | null> => {
       allowsEditing: false,
       quality: 1,
       videoMaxDuration: 60,
-      // Évite la conversion du fichier par iOS (source fréquente d'échecs sur les vidéos iCloud/HEVC)
-      preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Current,
     });
 
     if (result.canceled || !result.assets?.[0]) return null;
@@ -34,9 +32,13 @@ export const pickVideo = async (): Promise<PickedVideo | null> => {
     return { uri: asset.uri, fileName: asset.fileName, fileSize: asset.fileSize };
   } catch (error: any) {
     console.error('❌ Sélection vidéo échouée:', error);
+    // 3164 = la vidéo est sur iCloud et iOS n'a pas pu la télécharger
+    const isICloud = String(error?.message || '').includes('3164');
     Alert.alert(
       'Erreur',
-      "Impossible de charger la vidéo. Si elle est stockée sur iCloud, attends qu'elle soit téléchargée sur ton iPhone puis réessaie."
+      (isICloud
+        ? "Cette vidéo est stockée sur iCloud et n'a pas pu être téléchargée. Ouvre-la une fois dans l'app Photos (elle se télécharge), puis réessaie."
+        : 'Impossible de charger la vidéo. Réessaie avec une autre vidéo.')
         + (__DEV__ && error?.message ? `\n\n(${error.message})` : '')
     );
     return null;
