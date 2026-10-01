@@ -44,7 +44,7 @@ module.exports = () => {
         eas: {
           projectId: "33fbc0f6-46a7-4b72-a972-905d48581c11"
         },
-        apiUrl: "http://192.168.0.12:3333",
+        apiUrl: "https://viraly-production-b0cd.up.railway.app",
         // Client OAuth iOS du projet Firebase viraly-01 (Google Cloud > Google Auth Platform > Clients)
         googleIosClientId: "143996912608-n8q4upccattqvo2a6kpku884vmekgqpe.apps.googleusercontent.com",
 

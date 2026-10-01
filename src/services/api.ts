@@ -9,7 +9,7 @@ const getAuthHeaders = async (): Promise<Record<string, string>> => {
   return { Authorization: `Bearer ${token}` };
 };
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3333';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://viraly-production-b0cd.up.railway.app';
 
 class ApiService {
   private baseUrl: string;

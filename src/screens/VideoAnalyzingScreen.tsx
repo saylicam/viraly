@@ -219,7 +219,7 @@ export default function VideoAnalyzingScreen({ navigation, route }: VideoAnalyzi
 
         if (!healthCheck.success) {
           throw new Error(
-            'Serveur inaccessible. Vérifie que le backend tourne (cd src/server && npm run dev) et que EXPO_PUBLIC_API_URL pointe vers ton PC.'
+            'Serveur inaccessible. Vérifie ta connexion internet et réessaie.'
           );
         }
 
