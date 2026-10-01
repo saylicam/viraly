@@ -7,6 +7,7 @@ import * as Haptics from 'expo-haptics';
 import { theme } from '../theme';
 import AnimatedBackground from '../components/AnimatedBackground';
 import { apiService } from '../services/api';
+import { useRevenueCat } from '../context/RevenueCatContext';
 
 const { width, height } = Dimensions.get('window');
 
@@ -58,6 +59,7 @@ const ANALYSIS_STEPS = [
 ];
 
 export default function VideoAnalyzingScreen({ navigation, route }: VideoAnalyzingScreenProps) {
+  const { isPremium, syncPurchases } = useRevenueCat();
   const [currentStep, setCurrentStep] = useState(0);
   const [completedSteps, setCompletedSteps] = useState<number[]>([]);
   const [isComplete, setIsComplete] = useState(false);
@@ -231,7 +233,17 @@ export default function VideoAnalyzingScreen({ navigation, route }: VideoAnalyzi
           );
         }
 
-        const response = await apiService.uploadVideo(videoUri);
+        let response = await apiService.uploadVideo(videoUri);
+
+        // L'app voit un abonnement mais le serveur non : on renvoie le reçu Apple
+        // à RevenueCat pour ce compte, puis on réessaie une fois.
+        if (!response.success && response.code === 'FREE_LIMIT_REACHED' && isPremium) {
+          const premiumAfterSync = await syncPurchases();
+          if (cancelled) return;
+          if (premiumAfterSync) {
+            response = await apiService.uploadVideo(videoUri);
+          }
+        }
         if (cancelled) return;
 
         // Limite gratuite atteinte : on propose Premium

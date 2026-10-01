@@ -28,6 +28,11 @@ interface RevenueCatContextType {
   /** Restaure les achats. Renvoie true si un abonnement actif a été retrouvé. */
   restorePurchases: () => Promise<boolean>;
   checkPremiumStatus: () => Promise<boolean>;
+  /**
+   * Renvoie le reçu Apple à RevenueCat pour le compte connecté, puis relit le statut.
+   * Corrige le cas où l'app se croit Premium mais où l'achat n'est pas rattaché au compte.
+   */
+  syncPurchases: () => Promise<boolean>;
 }
 
 const RevenueCatContext = createContext<RevenueCatContextType | undefined>(undefined);
@@ -143,6 +148,18 @@ export const RevenueCatProvider: React.FC<{ children: ReactNode }> = ({ children
     return applyCustomerInfo(info);
   };
 
+  const syncPurchases = async (): Promise<boolean> => {
+    try {
+      await Purchases.syncPurchases();
+      await Purchases.invalidateCustomerInfoCache();
+      const info = await Purchases.getCustomerInfo();
+      return applyCustomerInfo(info);
+    } catch (error) {
+      console.warn('Synchronisation des achats impossible:', error);
+      return isPremium;
+    }
+  };
+
   const weeklyPackage = currentOffering?.weekly ?? null;
   const monthlyPackage = currentOffering?.monthly ?? null;
   const annualPackage = currentOffering?.annual ?? null;
@@ -161,6 +178,7 @@ export const RevenueCatProvider: React.FC<{ children: ReactNode }> = ({ children
     purchasePackage,
     restorePurchases,
     checkPremiumStatus,
+    syncPurchases,
   };
 
   return <RevenueCatContext.Provider value={value}>{children}</RevenueCatContext.Provider>;

@@ -18,7 +18,10 @@
   "submit": {
     "production": {
       "ios": {
-        "ascAppId": "6756351882"
+        "ascAppId": "6756351882",
+        "ascApiKeyPath": "C:/Users/nassi/Downloads/AuthKey_39TL5Y9RT8.p8",
+        "ascApiKeyIssuerId": "eca206b5-c8bd-42f7-920e-7fc230919cf8",
+        "ascApiKeyId": "39TL5Y9RT8"
       }
     }
   }

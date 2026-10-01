@@ -49,7 +49,7 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 
 const hasActiveEntitlement = async (uid: string): Promise<boolean> => {
   const cached = subscriptionCache.get(uid);
-  if (cached && Date.now() - cached.checkedAt < CACHE_TTL_MS) {
+  if (cached && cached.active && Date.now() - cached.checkedAt < CACHE_TTL_MS) {
     return cached.active;
   }
 
@@ -70,7 +70,14 @@ const hasActiveEntitlement = async (uid: string): Promise<boolean> => {
     !!entitlement &&
     (entitlement.expires_date === null || new Date(entitlement.expires_date).getTime() > Date.now());
 
-  subscriptionCache.set(uid, { active, checkedAt: Date.now() });
+  // On ne garde en cache que le statut « abonné » : un utilisateur qui vient
+  // de s'abonner doit être reconnu immédiatement.
+  if (active) {
+    subscriptionCache.set(uid, { active, checkedAt: Date.now() });
+  } else {
+    subscriptionCache.delete(uid);
+    console.log(`ℹ️ ${uid} : pas d'abonnement actif chez RevenueCat`);
+  }
   return active;
 };
 
