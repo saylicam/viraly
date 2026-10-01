@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions, Alert } from 'react-native';
+import { View, Text, StyleSheet, Animated, Dimensions, Alert, Easing } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
@@ -61,6 +61,8 @@ export default function VideoAnalyzingScreen({ navigation, route }: VideoAnalyzi
   const [currentStep, setCurrentStep] = useState(0);
   const [completedSteps, setCompletedSteps] = useState<number[]>([]);
   const [isComplete, setIsComplete] = useState(false);
+  // Pourcentage affiché = exactement la position de la barre
+  const [percent, setPercent] = useState(0);
   
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
@@ -104,10 +106,15 @@ export default function VideoAnalyzingScreen({ navigation, route }: VideoAnalyzi
     );
     rotateAnimation.start();
 
-    // Animation de la barre de progression (plus longue pour l'analyse vidéo)
+    // Barre de progression : avance vite au début puis ralentit, et s'arrête à 95 %
+    // tant que le serveur n'a pas répondu (elle passe à 100 % à la fin réelle de l'analyse).
+    const progressListener = progressAnim.addListener(({ value }) => {
+      setPercent(Math.round(value * 100));
+    });
     Animated.timing(progressAnim, {
-      toValue: 1,
-      duration: 15000, // 15 secondes pour l'analyse complète
+      toValue: 0.95,
+      duration: 40000,
+      easing: Easing.out(Easing.cubic),
       useNativeDriver: false,
     }).start();
 
@@ -131,6 +138,7 @@ export default function VideoAnalyzingScreen({ navigation, route }: VideoAnalyzi
     return () => {
       rotateAnimation.stop();
       glowAnimation.stop();
+      progressAnim.removeListener(progressListener);
     };
   }, []);
 
@@ -293,6 +301,13 @@ export default function VideoAnalyzingScreen({ navigation, route }: VideoAnalyzi
         };
 
         setIsComplete(true);
+        progressAnim.stopAnimation();
+        Animated.timing(progressAnim, {
+          toValue: 1,
+          duration: 400,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: false,
+        }).start();
         setCompletedSteps([0, 1, 2, 3, 4]);
         setCurrentStep(ANALYSIS_STEPS.length - 1);
         Animated.spring(stepAnims[ANALYSIS_STEPS.length - 1].checkScale, {
@@ -415,7 +430,7 @@ export default function VideoAnalyzingScreen({ navigation, route }: VideoAnalyzi
             </View>
           </BlurView>
           <Text style={styles.progressText}>
-            {Math.round(((currentStep + 1) / ANALYSIS_STEPS.length) * 100)}%
+            {percent}%
           </Text>
         </View>
 

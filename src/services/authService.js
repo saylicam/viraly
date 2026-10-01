@@ -8,10 +8,14 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   sendPasswordResetEmail,
-  signInWithCredential as firebaseSignInWithCredential
+  signInWithCredential as firebaseSignInWithCredential,
+  reauthenticateWithCredential,
+  EmailAuthProvider,
+  deleteUser,
+  revokeAccessToken,
 } from 'firebase/auth';
 import { GoogleAuthProvider, OAuthProvider } from 'firebase/auth';
-import { doc, setDoc, getDoc, serverTimestamp } from './firestoreWrapper';
+import { doc, setDoc, getDoc, serverTimestamp, collection, getDocs, deleteDoc } from './firestoreWrapper';
 import { auth, db } from '../../firebase';
 import Constants from 'expo-constants';
 import * as AppleAuthentication from 'expo-apple-authentication';
@@ -431,4 +435,70 @@ export const signInWithApple = async () => {
   }
 };
 
+/**
+ * Suppression définitive du compte (exigée par Apple).
+ * 1. Ré-authentification (Firebase l'exige pour supprimer un compte)
+ *    - Apple : nouvelle connexion Apple + révocation du jeton « Se connecter avec Apple » (exigé par Apple)
+ *    - E-mail : mot de passe demandé à l'utilisateur
+ *    - Google : si la connexion est trop ancienne, l'utilisateur doit se reconnecter puis réessayer
+ * 2. Suppression des données Firestore (calendrier + profil)
+ * 3. Suppression du compte Firebase
+ * @param {{ password?: string }} options
+ */
+export const deleteAccount = async ({ password } = {}) => {
+  const user = auth.currentUser;
+  if (!user) {
+    throw { code: 'auth/no-current-user', message: 'Aucun utilisateur connecté.' };
+  }
 
+  const providerId = user.providerData?.[0]?.providerId;
+
+  try {
+    if (providerId === 'apple.com') {
+      const appleCredential = await AppleAuthentication.signInAsync({ requestedScopes: [] });
+      if (!appleCredential.identityToken) {
+        throw { code: 'auth/missing-token', message: "Impossible de confirmer ton identité avec Apple." };
+      }
+      const credential = new OAuthProvider('apple.com').credential({ idToken: appleCredential.identityToken });
+      await reauthenticateWithCredential(user, credential);
+      if (appleCredential.authorizationCode) {
+        try {
+          await revokeAccessToken(auth, appleCredential.authorizationCode);
+        } catch (revokeError) {
+          console.warn('Révocation du jeton Apple impossible:', revokeError);
+        }
+      }
+    } else if (providerId === 'password') {
+      if (!password) {
+        throw { code: 'auth/missing-password', message: 'Mot de passe requis pour supprimer le compte.' };
+      }
+      await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, password));
+    }
+
+    // Données Firestore
+    const calendarSnapshot = await getDocs(collection(db, 'users', user.uid, 'calendar'));
+    await Promise.all(calendarSnapshot.docs.map((taskDoc) => deleteDoc(taskDoc.ref)));
+    await deleteDoc(doc(db, 'users', user.uid));
+
+    // Compte de connexion
+    await deleteUser(user);
+  } catch (error) {
+    if (error?.code === 'ERR_REQUEST_CANCELED') {
+      throw { code: 'auth/cancelled', message: 'Suppression annulée.' };
+    }
+    if (error?.code === 'auth/wrong-password' || error?.code === 'auth/invalid-credential') {
+      throw { code: error.code, message: 'Mot de passe incorrect.' };
+    }
+    if (error?.code === 'auth/requires-recent-login') {
+      throw {
+        code: error.code,
+        message: 'Par sécurité, déconnecte-toi puis reconnecte-toi, et relance la suppression du compte.',
+      };
+    }
+    throw {
+      code: error?.code || 'auth/unknown',
+      message: error?.message || 'La suppression du compte a échoué. Réessaie plus tard.',
+      originalError: error,
+    };
+  }
+};

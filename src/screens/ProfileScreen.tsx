@@ -8,7 +8,10 @@ import { auth } from '../../firebase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import { theme } from '../theme';
-import { logout } from '../services/authService';
+import { logout, deleteAccount } from '../services/authService';
+import { useRevenueCat } from '../context/RevenueCatContext';
+import { Linking } from 'react-native';
+import Purchases from 'react-native-purchases';
 import { useAuth } from '../hooks/useAuth';
 import { ScreenBackground } from '../components/ui/ScreenBackground';
 import { GlassCard } from '../components/ui/GlassCard';
@@ -26,6 +29,8 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
   const [notifications, setNotifications] = useState(true);
   const [darkMode, setDarkMode] = useState(true);
   const { user, setUser } = useAuth();
+  const { isPremium } = useRevenueCat();
+  const [isDeleting, setIsDeleting] = useState(false);
   
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
@@ -85,6 +90,64 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
             }
           }
         }
+      ]
+    );
+  };
+
+  const runDeleteAccount = async (password?: string) => {
+    setIsDeleting(true);
+    try {
+      await deleteAccount({ password });
+      try {
+        await Purchases.logOut();
+      } catch {}
+      setUser(null);
+      await AsyncStorage.removeItem(FIRST_LAUNCH_KEY);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert('Compte supprimé', 'Ton compte et tes données ont été supprimés définitivement.');
+      navigation.reset({ index: 0, routes: [{ name: 'Splash' }] });
+    } catch (error: any) {
+      if (error?.code !== 'auth/cancelled') {
+        Alert.alert('Suppression impossible', error?.message || 'Réessaie plus tard.');
+      }
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleDeleteAccount = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    const providerId = auth.currentUser?.providerData?.[0]?.providerId;
+    Alert.alert(
+      'Supprimer mon compte',
+      "Ton compte, ton profil et ton calendrier seront supprimés définitivement. Cette action est irréversible."
+        + (isPremium
+          ? "\n\nAttention : ton abonnement n'est pas annulé automatiquement. Annule-le dans les réglages de ton iPhone (Abonnements)."
+          : ''),
+      [
+        { text: 'Annuler', style: 'cancel' },
+        ...(isPremium
+          ? [{ text: 'Gérer mon abonnement', onPress: () => Linking.openURL('https://apps.apple.com/account/subscriptions') }]
+          : []),
+        {
+          text: 'Supprimer',
+          style: 'destructive' as const,
+          onPress: () => {
+            if (providerId === 'password') {
+              Alert.prompt(
+                'Confirme ton mot de passe',
+                'Pour ta sécurité, entre ton mot de passe.',
+                [
+                  { text: 'Annuler', style: 'cancel' },
+                  { text: 'Supprimer', style: 'destructive', onPress: (value?: string) => runDeleteAccount(value || '') },
+                ],
+                'secure-text'
+              );
+            } else {
+              runDeleteAccount();
+            }
+          },
+        },
       ]
     );
   };
@@ -191,20 +254,22 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
               <Ionicons name="diamond" size={24} color={theme.colors.warning} />
               <Text style={styles.subscriptionTitle}>Abonnement</Text>
             </View>
-            <Text style={styles.subscriptionStatus}>Version Gratuite</Text>
+            <Text style={styles.subscriptionStatus}>{isPremium ? 'Viraly Premium ✨' : 'Version Gratuite'}</Text>
             <Text style={styles.subscriptionDescription}>
-              Passe à Viraly Pro pour débloquer toutes les fonctionnalités
+              {isPremium
+                ? 'Analyses illimitées et résultats complets débloqués.'
+                : 'Passe à Viraly Premium pour débloquer toutes les fonctionnalités'}
             </Text>
             <TouchableOpacity
               style={styles.upgradeButton}
-              onPress={handleUpgrade}
+              onPress={isPremium ? () => Linking.openURL('https://apps.apple.com/account/subscriptions') : handleUpgrade}
               activeOpacity={0.8}
             >
               <LinearGradient
                 colors={theme.colors.gradient.primary}
                 style={styles.upgradeButtonGradient}
               >
-                <Text style={styles.upgradeButtonText}>Passer à Pro</Text>
+                <Text style={styles.upgradeButtonText}>{isPremium ? 'Gérer mon abonnement' : 'Passer à Premium'}</Text>
                 <Ionicons name="arrow-forward" size={16} color="white" />
               </LinearGradient>
             </TouchableOpacity>
@@ -305,6 +370,17 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
                 <Ionicons name="log-out-outline" size={16} color={theme.colors.error} style={{ marginRight: 8 }} />
                 <Text style={styles.logoutText}>Se déconnecter</Text>
               </TouchableOpacity>
+
+              {user && !user.isGuest && (
+                <TouchableOpacity
+                  style={[styles.logoutButton, { marginTop: 12, opacity: isDeleting ? 0.5 : 1 }]}
+                  onPress={handleDeleteAccount}
+                  disabled={isDeleting}
+                >
+                  <Ionicons name="trash-outline" size={16} color={theme.colors.error} style={{ marginRight: 8 }} />
+                  <Text style={styles.logoutText}>{isDeleting ? 'Suppression…' : 'Supprimer mon compte'}</Text>
+                </TouchableOpacity>
+              )}
             </GlassCard>
           </View>
 
