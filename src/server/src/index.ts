@@ -5,6 +5,9 @@ import rateLimit from 'express-rate-limit';
 import { env } from './env';
 import analyzeRoutes from './routes/analyze';
 import legalRoutes from './routes/legal';
+import trendsRoutes from './routes/trends';
+import accountRoutes from './routes/account';
+import { startWeeklyTrendsJob } from './jobs/weeklyTrends';
 import { requireAuth, checkSubscription } from './middleware/auth';
 
 const app = express();
@@ -19,7 +22,9 @@ app.use(helmet());
 const limiter = rateLimit({
   windowMs: parseInt(env.RATE_LIMIT_WINDOW_MS),
   max: parseInt(env.RATE_LIMIT_MAX),
-  message: 'Too many requests from this IP, please try again later.',
+  message: { success: false, error: 'RATE_LIMITED', message: 'Trop de requêtes, réessaie dans quelques minutes.' },
+  // Les vignettes des tendances (des dizaines par écran) ne comptent pas dans la limite
+  skip: (req) => req.path.startsWith('/api/trends/cover/') || req.path === '/health',
 });
 app.use(limiter);
 
@@ -45,6 +50,12 @@ app.get('/health', (req, res) => {
 // API routes : analyse réservée aux utilisateurs connectés ; complète pour les abonnés, partielle sinon
 app.use('/api/analyze', requireAuth, checkSubscription, analyzeRoutes);
 
+// Tendances de la semaine (sons, vidéos stars) : aperçu gratuit, complet pour Premium
+app.use('/api/trends', trendsRoutes);
+
+// Bilan du compte TikTok (@pseudo) et fiche créateur
+app.use('/api/account', accountRoutes);
+
 // Pages publiques : politique de confidentialité et assistance (liens App Store)
 app.use('/', legalRoutes);
 
@@ -68,9 +79,12 @@ const PORT = parseInt(env.PORT);
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on http://0.0.0.0:${PORT}`);
   console.log(`📊 Environment: ${env.NODE_ENV}`);
-  console.log(`🔐 Abonnement requis: ${env.REQUIRE_SUBSCRIPTION === 'true' ? 'Oui' : 'Non (mode test)'}`);
+  console.log(`🔐 Abonnement requis: ${env.REQUIRE_SUBSCRIPTION === 'true' ? 'Oui' : 'Non (tout le monde est Premium)'}`);
+  if (env.TEST_PLAN) console.log(`🧪 Mode test : tous les comptes sont traités comme « ${env.TEST_PLAN} » (TEST_PLAN)`);
+  console.log(`🎁 Analyses offertes par compte gratuit : ${env.FREE_ANALYSES_TOTAL}`);
   console.log(`🤖 Gemini API configured: ${env.GEMINI_API_KEY ? 'Yes' : 'No'}`);
   console.log(`⏱️  Server timeout: 5 minutes (300000ms)`);
+  startWeeklyTrendsJob();
 });
 
 // Set timeout for long requests (video upload + AI analysis)

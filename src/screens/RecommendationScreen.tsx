@@ -1,770 +1,226 @@
-import React, { useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions, TouchableOpacity, ScrollView } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
+import { MotiView } from 'moti';
 import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
-import { theme } from '../theme';
-import AnimatedBackground from '../components/AnimatedBackground';
+import { Sparkles, CalendarDays, ArrowRight, Flame, Wand2, ScanSearch } from 'lucide-react-native';
+import { OnboardingShell, PrimaryButton, OB } from '../components/onboarding/OnboardingUI';
 import { useAuth } from '../hooks/useAuth';
-
-const { width, height } = Dimensions.get('window');
+import { useSession } from '../context/SessionContext';
+import {
+  answersToProfile, saveCreatorProfile, LEVEL_LABELS, GOAL_LABELS, BLOCKER_LABELS, nichesLabel, NICHE_LABELS,
+} from '../services/creatorProfile';
+import { buildCreatorPlan } from '../services/creatorPlan';
+import { useCreatorProfile } from '../services/creatorProfile';
+import { formatCount } from '../utils/format';
 
 interface RecommendationScreenProps {
   navigation: any;
-  route: {
-    params: {
-      answers: Record<string, string[]>;
-    };
-  };
+  route: { params: { answers: Record<string, string[]> } };
 }
 
-const KEY_RECOMMENDATIONS = [
-  {
-    icon: 'happy-outline',
-    title: 'Humor & Entertainment',
-    description: 'Crée du contenu divertissant avec des sketches courts et percutants',
-    gradient: ['#ef4444', '#dc2626'],
-  },
-  {
-    icon: 'flash-outline',
-    title: 'Optimiser tes hooks',
-    description: 'Commence toujours par une question ou une affirmation forte',
-    gradient: ['#ef4444', '#dc2626'],
-  },
-  {
-    icon: 'chatbubbles-outline',
-    title: 'Interagir avec ta communauté',
-    description: 'Réponds aux commentaires dans les 2h pour maximiser l\'engagement',
-    gradient: ['#ef4444', '#dc2626'],
-  },
-];
-
-const SUGGESTED_SCHEDULE = [
-  { day: 'Mercredi', time: '19h', type: 'Contenu principal', hashtags: ['#comedy', '#fyp'] },
-  { day: 'Vendredi', time: '18h', type: 'Contenu secondaire', hashtags: ['#trending', '#viral'] },
-  { day: 'Dimanche', time: '20h', type: 'Contenu principal', hashtags: ['#comedy', '#fyp'] },
-];
+const Chip = ({ icon, text }: { icon: keyof typeof Ionicons.glyphMap; text: string }) => (
+  <View style={styles.chip}>
+    <Ionicons name={icon} size={14} color={OB.lilac} />
+    <Text style={styles.chipText}>{text}</Text>
+  </View>
+);
 
 export default function RecommendationScreen({ navigation, route }: RecommendationScreenProps) {
-  const { answers } = route.params;
-  const { user } = useAuth(); // Vérifier si user est connecté
-  
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(50)).current;
-  const glowAnim = useRef(new Animated.Value(0)).current;
+  const answers = route.params?.answers ?? {};
+  const { user } = useAuth();
+  const [saving, setSaving] = useState(false);
+  const profile = useMemo(() => answersToProfile(answers), [answers]);
+  const plan = useMemo(() => buildCreatorPlan(profile), [profile]);
+  const name = (profile.name ?? '').split(/\s+/)[0];
+  const niche = NICHE_LABELS[profile.niches?.[0] ?? ''];
 
-  // Animations pour les recommandations en cascade
-  const recommendationAnims = useRef(
-    KEY_RECOMMENDATIONS.map(() => ({
-      opacity: new Animated.Value(0),
-      translateY: new Animated.Value(30),
-      scale: new Animated.Value(0.9),
-      glow: new Animated.Value(0),
-    }))
-  ).current;
+  const loggedIn = !!user;
+  const { status, completeProfile } = useSession();
+  const { profile: stored } = useCreatorProfile();
+  const tk = profile.tiktok && stored?.tiktokPreview?.handle === profile.tiktok ? stored.tiktokPreview : null;
 
-  // Animations pour les cartes de planning
-  const scheduleAnims = useRef(
-    SUGGESTED_SCHEDULE.map(() => ({
-      opacity: new Animated.Value(0),
-      translateX: new Animated.Value(-20),
-    }))
-  ).current;
-
-  // Animation du header
-  const headerAnim = useRef({
-    opacity: new Animated.Value(0),
-    scale: new Animated.Value(0.8),
-  }).current;
-
-  // Animation du bouton
-  const buttonAnim = useRef({
-    opacity: new Animated.Value(0),
-    scale: new Animated.Value(0.9),
-    glow: new Animated.Value(0),
-  }).current;
-
-  useEffect(() => {
-    // Animation d'entrée principale
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-    ]).start();
-
-    // Animation du glow global
-    const glowAnimation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(glowAnim, {
-          toValue: 1,
-          duration: 3000,
-          useNativeDriver: false,
-        }),
-        Animated.timing(glowAnim, {
-          toValue: 0,
-          duration: 3000,
-          useNativeDriver: false,
-        }),
-      ])
-    );
-    glowAnimation.start();
-
-    // Animation du header
-    Animated.parallel([
-      Animated.timing(headerAnim.opacity, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.spring(headerAnim.scale, {
-        toValue: 1,
-        tension: 50,
-        friction: 7,
-        useNativeDriver: true,
-      }),
-    ]).start();
-
-    // Animation en cascade pour les recommandations
-    const cascadeDelay = 200;
-    recommendationAnims.forEach((anim, index) => {
-      setTimeout(() => {
-        Animated.parallel([
-          Animated.timing(anim.opacity, {
-            toValue: 1,
-            duration: 600,
-            useNativeDriver: true,
-          }),
-          Animated.timing(anim.translateY, {
-            toValue: 0,
-            duration: 500,
-            useNativeDriver: true,
-          }),
-          Animated.spring(anim.scale, {
-            toValue: 1,
-            tension: 80,
-            friction: 6,
-            useNativeDriver: true,
-          }),
-        ]).start();
-
-        // Animation du glow pour chaque recommandation
-        Animated.loop(
-          Animated.sequence([
-            Animated.timing(anim.glow, {
-              toValue: 1,
-              duration: 2000 + index * 200,
-              useNativeDriver: false,
-            }),
-            Animated.timing(anim.glow, {
-              toValue: 0,
-              duration: 2000 + index * 200,
-              useNativeDriver: false,
-            }),
-          ])
-        ).start();
-      }, 800 + (index * cascadeDelay));
-    });
-
-    // Animation en cascade pour les cartes de planning
-    const scheduleDelay = 150;
-    scheduleAnims.forEach((anim, index) => {
-      setTimeout(() => {
-        Animated.parallel([
-          Animated.timing(anim.opacity, {
-            toValue: 1,
-            duration: 500,
-            useNativeDriver: true,
-          }),
-          Animated.timing(anim.translateX, {
-            toValue: 0,
-            duration: 400,
-            useNativeDriver: true,
-          }),
-        ]).start();
-      }, 800 + (KEY_RECOMMENDATIONS.length * cascadeDelay) + 400 + (index * scheduleDelay));
-    });
-
-    // Animation du bouton
-    setTimeout(() => {
-      Animated.parallel([
-        Animated.timing(buttonAnim.opacity, {
-          toValue: 1,
-          duration: 600,
-          useNativeDriver: true,
-        }),
-        Animated.spring(buttonAnim.scale, {
-          toValue: 1,
-          tension: 50,
-          friction: 7,
-          useNativeDriver: true,
-        }),
-      ]).start();
-
-      // Animation du glow du bouton
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(buttonAnim.glow, {
-            toValue: 1,
-            duration: 2000,
-            useNativeDriver: false,
-          }),
-          Animated.timing(buttonAnim.glow, {
-            toValue: 0,
-            duration: 2000,
-            useNativeDriver: false,
-          }),
-        ])
-      ).start();
-    }, 800 + (KEY_RECOMMENDATIONS.length * cascadeDelay) + 400 + (SUGGESTED_SCHEDULE.length * scheduleDelay) + 200);
-
-    // Haptic feedback au chargement complet
-    setTimeout(() => {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    }, 800 + (KEY_RECOMMENDATIONS.length * cascadeDelay) + 400 + (SUGGESTED_SCHEDULE.length * scheduleDelay) + 400);
-  }, []);
-
-  // Extract answers for profile display
-  const profileLevel = answers.level?.[0] || 'Débutant-e';
-  const profileNiche = answers.niches?.[0] || 'Comédie';
-  const profileFrequency = answers.frequency?.[0] || '1x / semaine';
-  const profileGoal = answers.goal?.[0] || 'Augmenter mes vues';
-
-  const glowOpacity = glowAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.05, 0.15],
-  });
-
-  const buttonGlowOpacity = buttonAnim.glow.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.4, 0.9],
-  });
+  const onContinue = async () => {
+    if (!loggedIn) {
+      navigation.navigate('Login', { answers });
+      return;
+    }
+    setSaving(true);
+    // Compte sans profil qui termine son questionnaire : la session ouvre l'accueil (puis Premium)
+    if (status === 'needsProfile') {
+      await completeProfile(answers);
+      return;
+    }
+    // Profil modifié depuis l'app : on enregistre et on revient à l'accueil
+    await saveCreatorProfile(profile, user!.uid).catch(() => {});
+    navigation.reset({ index: 0, routes: [{ name: 'Main' }] });
+  };
 
   return (
-    <View style={styles.container}>
-      <LinearGradient
-        colors={['#0B021A', '#1E0F3C', '#0B021A']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={StyleSheet.absoluteFillObject}
-      />
-      
-      {/* Particules animées */}
-      <AnimatedBackground />
-
-      {/* Glow central */}
-      <Animated.View
-        style={[
-          StyleSheet.absoluteFillObject,
-          styles.centerGlow,
-          { opacity: glowOpacity }
-        ]}
-        pointerEvents="none"
-      >
-        <View style={styles.glowCircle} />
-      </Animated.View>
-
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        <Animated.View
-          style={[
-            styles.content,
-            {
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }]
-            }
-          ]}
-        >
-          {/* Header avec animation */}
-          <Animated.View
-            style={[
-              styles.header,
-              {
-                opacity: headerAnim.opacity,
-                transform: [{ scale: headerAnim.scale }]
-              }
-            ]}
-          >
-            <View style={styles.iconContainer}>
-              <LinearGradient
-                colors={theme.colors.gradient.primary}
-                style={styles.headerIcon}
-              >
-                <Ionicons name="checkmark-circle" size={40} color="white" />
-              </LinearGradient>
-            </View>
-            <Text style={styles.title}>Ton plan personnalisé</Text>
-            <Text style={styles.subtitle}>
-              Généré par notre IA selon tes réponses
-            </Text>
-          </Animated.View>
-
-          {/* Profile Card */}
-          <BlurView intensity={20} tint="dark" style={styles.profileCard}>
-            <View style={styles.profileHeader}>
-              <Text style={styles.profileTitle}>Ton profil</Text>
-              <View style={styles.completeBadge}>
-                <Ionicons name="checkmark" size={12} color="white" />
-                <Text style={styles.completeBadgeText}>Complet</Text>
-              </View>
-            </View>
-            
-            <View style={styles.profileGrid}>
-              <View style={styles.profileItem}>
-                <Text style={styles.profileLabel}>Niveau</Text>
-                <Text style={styles.profileValue}>{profileLevel}</Text>
-              </View>
-              <View style={styles.profileItem}>
-                <Text style={styles.profileLabel}>Niche</Text>
-                <Text style={styles.profileValue}>{profileNiche}</Text>
-              </View>
-              <View style={styles.profileItem}>
-                <Text style={styles.profileLabel}>Fréquence</Text>
-                <Text style={styles.profileValue}>{profileFrequency}</Text>
-              </View>
-              <View style={styles.profileItem}>
-                <Text style={styles.profileLabel}>Objectif</Text>
-                <Text style={styles.profileValue}>{profileGoal}</Text>
-              </View>
-            </View>
-          </BlurView>
-
-          {/* Key Recommendations */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Recommandations clés</Text>
-            
-            {KEY_RECOMMENDATIONS.map((rec, index) => {
-              const recGlowOpacity = recommendationAnims[index].glow.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0, 0.4],
-              });
-
-              return (
-                <Animated.View
-                  key={index}
-                  style={[
-                    {
-                      opacity: recommendationAnims[index].opacity,
-                      transform: [
-                        { translateY: recommendationAnims[index].translateY },
-                        { scale: recommendationAnims[index].scale }
-                      ],
-                    }
-                  ]}
-                >
-                  <Animated.View
-                    style={[
-                      styles.recommendationGlow,
-                      { opacity: recGlowOpacity }
-                    ]}
-                    pointerEvents="none"
-                  />
-                  <BlurView intensity={15} tint="dark" style={styles.recommendationCard}>
-                    <View style={styles.recommendationHeader}>
-                      <LinearGradient
-                        colors={['rgba(139, 92, 246, 0.3)', 'rgba(236, 72, 153, 0.3)']}
-                        style={styles.recommendationIconContainer}
-                      >
-                        <Ionicons name={rec.icon as any} size={24} color="white" />
-                      </LinearGradient>
-                      <View style={styles.recommendationContent}>
-                        <Text style={styles.recommendationTitle}>{rec.title}</Text>
-                        <Text style={styles.recommendationDescription}>{rec.description}</Text>
-                      </View>
-                      <View style={styles.priorityBadge}>
-                        <Ionicons name="close-circle" size={14} color="white" />
-                        <Text style={styles.priorityBadgeText}>Priorité haute</Text>
-                      </View>
-                    </View>
-                    <LinearGradient
-                      colors={rec.gradient}
-                      style={styles.recommendationGradient}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                    />
-                  </BlurView>
-                </Animated.View>
-              );
-            })}
+    <OnboardingShell
+      contentStyle={{ paddingHorizontal: 0 }}
+      footer={
+        <>
+          <PrimaryButton
+            label={loggedIn ? 'C’est parti' : 'Sauvegarder mon plan'}
+            onPress={onContinue}
+            loading={saving}
+            icon={<ArrowRight size={20} color="#FFF" />}
+          />
+          <Text style={styles.reassure}>Gratuit · ton plan et ton calendrier sont gardés dans ton compte</Text>
+        </>
+      }
+    >
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <MotiView from={{ opacity: 0, translateY: 10 }} animate={{ opacity: 1, translateY: 0 }}>
+          <View style={styles.readyPill}>
+            <Sparkles size={14} color="#42FFB0" />
+            <Text style={styles.readyText}>Ton plan est prêt</Text>
           </View>
+          <Text style={styles.title}>
+            {name ? `${name}, voici ` : 'Voici '}
+            <Text style={{ color: OB.pink }}>{plan.headline.replace(/^Ton/, 'ton')}</Text>
+          </Text>
+          <Text style={styles.intro}>{plan.intro}</Text>
 
-          {/* Suggested Schedule */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Planning suggéré</Text>
-            
-            {SUGGESTED_SCHEDULE.map((schedule, index) => (
-              <Animated.View
-                key={index}
-                style={[
-                  {
-                    opacity: scheduleAnims[index].opacity,
-                    transform: [{ translateX: scheduleAnims[index].translateX }],
-                  }
-                ]}
-              >
-                <BlurView intensity={15} tint="dark" style={styles.scheduleCard}>
-                  <LinearGradient
-                    colors={theme.colors.gradient.primary}
-                    style={styles.scheduleGradient}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                  />
-                  <View style={styles.scheduleContent}>
-                    <View style={styles.scheduleDateContainer}>
-                      <Text style={styles.scheduleDay}>{schedule.day}</Text>
-                      <Text style={styles.scheduleTime}>{schedule.time}</Text>
-                    </View>
-                    <View style={styles.scheduleDetails}>
-                      <Text style={styles.scheduleType}>{schedule.type}</Text>
-                      <View style={styles.hashtagsContainer}>
-                        {schedule.hashtags.map((tag, idx) => (
-                          <View key={idx} style={styles.hashtagBadge}>
-                            <Text style={styles.hashtagText}>{tag}</Text>
-                          </View>
-                        ))}
-                      </View>
-                    </View>
+          <View style={styles.chips}>
+            {profile.level ? <Chip icon="person-outline" text={LEVEL_LABELS[profile.level] ?? profile.level} /> : null}
+            {profile.niches?.length ? <Chip icon="videocam-outline" text={nichesLabel(profile.niches)} /> : null}
+            {profile.goal ? <Chip icon="flag-outline" text={GOAL_LABELS[profile.goal] ?? profile.goal} /> : null}
+          </View>
+        </MotiView>
+
+        {/* Compte TikTok trouvé pendant le questionnaire */}
+        {tk ? (
+          <MotiView from={{ opacity: 0, translateY: 14 }} animate={{ opacity: 1, translateY: 0 }} transition={{ delay: 120 }}>
+            <LinearGradient colors={['#FF4FF9', '#B53CFF', '#7B1FE0']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.tk}>
+              <View style={styles.tkHead}>
+                {tk.avatar ? <Image source={{ uri: tk.avatar }} style={styles.tkAvatar} /> : <View style={[styles.tkAvatar, { backgroundColor: 'rgba(255,255,255,0.25)' }]} />}
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.tkName} numberOfLines={1}>{tk.nickname}</Text>
+                  <Text style={styles.tkHandle}>@{tk.handle}</Text>
+                </View>
+                <View style={styles.tkBadge}><Text style={styles.tkBadgeText}>Compte relié</Text></View>
+              </View>
+              <View style={styles.tkStats}>
+                {[{ v: tk.followers, l: 'abonnés' }, { v: tk.likes, l: 'j’aime' }, { v: tk.videoCount, l: 'vidéos' }].map((x) => (
+                  <View key={x.l} style={styles.tkStat}>
+                    <Text style={styles.tkValue}>{formatCount(x.v)}</Text>
+                    <Text style={styles.tkLabel}>{x.l}</Text>
                   </View>
-                </BlurView>
-              </Animated.View>
+                ))}
+              </View>
+              <Text style={styles.tkText}>
+                {loggedIn
+                  ? 'L’IA va étudier tes vidéos : ton bilan complet t’attend sur l’accueil.'
+                  : 'L’IA est prête à étudier tes vidéos. Sauvegarde ton plan pour débloquer ton bilan complet.'}
+              </Text>
+            </LinearGradient>
+          </MotiView>
+        ) : null}
+
+        {/* Priorités */}
+        <Text style={styles.section}>Tes 3 priorités</Text>
+        {plan.tips.map((t, i) => (
+          <MotiView key={t.title} from={{ opacity: 0, translateY: 14 }} animate={{ opacity: 1, translateY: 0 }} transition={{ delay: 150 + i * 120 }} style={[styles.tip, i === 0 && styles.tipFirst]}>
+            <View style={[styles.tipIcon, { backgroundColor: `${t.color}22` }]}>
+              <Ionicons name={t.icon as any} size={22} color={t.color} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.tipTag, { color: t.color }]}>{t.tag}</Text>
+              <Text style={styles.tipTitle}>{t.title}</Text>
+              <Text style={styles.tipText}>{t.text}</Text>
+              {i === 0 && profile.blocker ? (
+                <Text style={styles.tipWhy}>Parce que tu as répondu : « {BLOCKER_LABELS[profile.blocker]} »</Text>
+              ) : null}
+            </View>
+          </MotiView>
+        ))}
+
+        {/* Rythme */}
+        <Text style={styles.section}>Ton rythme</Text>
+        <MotiView from={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 550 }} style={styles.rhythm}>
+          <View style={styles.rhythmHead}>
+            <CalendarDays size={20} color="#4FC3FF" />
+            <Text style={styles.rhythmTitle}>
+              {plan.perWeek} vidéo{plan.perWeek > 1 ? 's' : ''} par semaine
+            </Text>
+          </View>
+          <View style={styles.slots}>
+            {plan.slots.map((s) => (
+              <View key={s.day} style={styles.slot}>
+                <Text style={styles.slotDay}>{s.day}</Text>
+                <Text style={styles.slotHour}>{s.hour}</Text>
+              </View>
             ))}
           </View>
+          <Text style={styles.rhythmNote}>On ajoute ces créneaux à ton calendrier, tu pourras les modifier.</Text>
+        </MotiView>
 
-          {/* CTA Button avec glow */}
-          <Animated.View
-            style={[
-              styles.ctaButtonContainer,
-              {
-                opacity: buttonAnim.opacity,
-                transform: [{ scale: buttonAnim.scale }]
-              }
-            ]}
-          >
-            <Animated.View
-              style={[
-                styles.buttonGlow,
-                { opacity: buttonGlowOpacity }
-              ]}
-              pointerEvents="none"
-            />
-            <TouchableOpacity
-              style={styles.ctaButton}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                
-                // Vérifier si un user est connecté
-                if (user !== null && user !== undefined && !user.isGuest && user.uid !== 'guest') {
-                  // Utilisateur connecté → Dashboard directement
-                  navigation.reset({
-                    index: 0,
-                    routes: [{ name: 'Main' }],
-                  });
-                } else {
-                  // Pas connecté → Login avec les réponses du questionnaire
-                  navigation.navigate('Login', { answers });
-                }
-              }}
-              activeOpacity={0.85}
-            >
-              <LinearGradient
-                colors={theme.colors.gradient.primary}
-                style={styles.ctaButtonGradient}
-              >
-                <Text style={styles.ctaButtonText}>Créer mon compte</Text>
-                <Ionicons name="arrow-forward" size={20} color="white" />
-              </LinearGradient>
-            </TouchableOpacity>
-          </Animated.View>
-        </Animated.View>
+        {/* Ce que Viraly fait pour toi */}
+        <Text style={styles.section}>Ce que Viraly fait pour toi</Text>
+        <LinearGradient colors={['rgba(255,79,249,0.14)', 'rgba(144,19,254,0.12)']} style={styles.viraly}>
+          {[
+            ...(profile.tiktok ? [{ Icon: Sparkles, color: '#42FFB0', text: `Le bilan de ton compte @${profile.tiktok}, chaque semaine` }] : []),
+            { Icon: Flame, color: '#FFB84F', text: `Les tendances ${niche ?? 'de ta niche'} chaque semaine` },
+            { Icon: Wand2, color: OB.pink, text: 'Un plan de tournage pour chaque tendance' },
+            { Icon: ScanSearch, color: '#4FC3FF', text: 'Une vérification de ta vidéo avant de publier' },
+          ].map(({ Icon, color, text }) => (
+            <View key={text} style={styles.viralyRow}>
+              <Icon size={18} color={color} />
+              <Text style={styles.viralyText}>{text}</Text>
+            </View>
+          ))}
+        </LinearGradient>
       </ScrollView>
-    </View>
+    </OnboardingShell>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  centerGlow: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  glowCircle: {
-    width: width * 1.2,
-    height: width * 1.2,
-    borderRadius: width * 0.6,
-    backgroundColor: 'rgba(139, 92, 246, 0.15)',
-    position: 'absolute',
-  },
-  scrollContent: {
-    flexGrow: 1,
-    paddingBottom: 100,
-  },
-  content: {
-    paddingHorizontal: 24,
-    paddingTop: 60,
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 32,
-  },
-  iconContainer: {
-    marginBottom: 20,
-  },
-  headerIcon: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: theme.colors.primary,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.6,
-    shadowRadius: 20,
-    elevation: 12,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: theme.colors.text.primary,
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  subtitle: {
-    fontSize: 16,
-    color: theme.colors.text.secondary,
-    textAlign: 'center',
-  },
-  profileCard: {
-    borderRadius: 24,
-    padding: 24,
-    marginBottom: 32,
-    borderWidth: 1,
-    borderColor: theme.colors.border.primary,
-  },
-  profileHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  profileTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: theme.colors.text.primary,
-  },
-  completeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: theme.colors.success,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  completeBadgeText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: 'bold',
-    marginLeft: 4,
-  },
-  profileGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
-  profileItem: {
-    width: '48%',
-    marginBottom: 16,
-  },
-  profileLabel: {
-    fontSize: 14,
-    color: theme.colors.text.secondary,
-    marginBottom: 4,
-  },
-  profileValue: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: theme.colors.text.primary,
-  },
-  section: {
-    marginBottom: 32,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: theme.colors.text.primary,
-    marginBottom: 16,
-  },
-  recommendationCard: {
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: theme.colors.border.primary,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  recommendationGlow: {
-    position: 'absolute',
-    width: '100%',
-    height: '100%',
-    borderRadius: 20,
-    backgroundColor: 'rgba(139, 92, 246, 0.2)',
-    top: 0,
-    left: 0,
-  },
-  recommendationHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  recommendationIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  recommendationContent: {
-    flex: 1,
-  },
-  recommendationTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: theme.colors.text.primary,
-    marginBottom: 8,
-  },
-  recommendationDescription: {
-    fontSize: 14,
-    color: theme.colors.text.secondary,
-    lineHeight: 20,
-  },
-  priorityBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(239, 68, 68, 0.2)',
-    borderWidth: 1,
-    borderColor: '#ef4444',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  priorityBadgeText: {
-    color: '#ef4444',
-    fontSize: 11,
-    fontWeight: 'bold',
-    marginLeft: 4,
-  },
-  recommendationGradient: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 4,
-  },
-  scheduleCard: {
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: theme.colors.border.primary,
-    overflow: 'hidden',
-  },
-  scheduleGradient: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    opacity: 0.1,
-  },
-  scheduleContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  scheduleDateContainer: {
-    marginRight: 20,
-  },
-  scheduleDay: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: theme.colors.text.primary,
-    marginBottom: 4,
-  },
-  scheduleTime: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: theme.colors.text.secondary,
-  },
-  scheduleDetails: {
-    flex: 1,
-  },
-  scheduleType: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: theme.colors.text.primary,
-    marginBottom: 8,
-  },
-  hashtagsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  hashtagBadge: {
-    backgroundColor: 'rgba(139, 92, 246, 0.2)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  hashtagText: {
-    color: theme.colors.primary,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  ctaButtonContainer: {
-    marginTop: 20,
-    marginBottom: 32,
-    position: 'relative',
-  },
-  buttonGlow: {
-    position: 'absolute',
-    width: '110%',
-    height: '150%',
-    borderRadius: 30,
-    backgroundColor: 'rgba(139, 92, 246, 0.4)',
-    top: '-25%',
-    left: '-5%',
-  },
-  ctaButton: {
-    width: '100%',
-    zIndex: 1,
-  },
-  ctaButtonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 18,
-    paddingHorizontal: 32,
-    borderRadius: 30,
-    shadowColor: theme.colors.primary,
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.6,
-    shadowRadius: 20,
-    elevation: 16,
-  },
-  ctaButtonText: {
-    color: 'white',
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginRight: 8,
-  },
+  scroll: { paddingHorizontal: 24, paddingBottom: 24 },
+  readyPill: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, backgroundColor: 'rgba(66,255,176,0.12)', marginTop: 8 },
+  readyText: { color: '#42FFB0', fontSize: 13, fontWeight: '800' },
+  title: { color: '#FFF', fontSize: 30, lineHeight: 36, fontWeight: '900', marginTop: 16, letterSpacing: -0.3 },
+  intro: { color: OB.muted, fontSize: 16, lineHeight: 23, marginTop: 10 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 16 },
+  chip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, backgroundColor: 'rgba(179,113,255,0.12)', borderWidth: 1, borderColor: 'rgba(179,113,255,0.25)' },
+  chipText: { color: '#FFF', fontSize: 13, fontWeight: '700' },
+
+  tk: { borderRadius: 24, padding: 18, marginTop: 22, overflow: 'hidden' },
+  tkHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  tkAvatar: { width: 48, height: 48, borderRadius: 24, borderWidth: 2, borderColor: '#FFF' },
+  tkName: { color: '#FFF', fontSize: 17, fontWeight: '900' },
+  tkHandle: { color: 'rgba(255,255,255,0.8)', fontSize: 13, fontWeight: '600' },
+  tkBadge: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.22)' },
+  tkBadgeText: { color: '#FFF', fontSize: 11, fontWeight: '900' },
+  tkStats: { flexDirection: 'row', gap: 8, marginTop: 16 },
+  tkStat: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 14, backgroundColor: 'rgba(0,0,0,0.18)' },
+  tkValue: { color: '#FFF', fontSize: 19, fontWeight: '900' },
+  tkLabel: { color: 'rgba(255,255,255,0.8)', fontSize: 11, fontWeight: '700', marginTop: 1 },
+  tkText: { color: '#FFF', fontSize: 13, lineHeight: 18, fontWeight: '600', marginTop: 14 },
+
+  section: { color: '#FFF', fontSize: 19, fontWeight: '800', marginTop: 28, marginBottom: 12 },
+  tip: { flexDirection: 'row', gap: 14, padding: 16, borderRadius: 22, backgroundColor: OB.card, borderWidth: 1, borderColor: OB.border, marginBottom: 10 },
+  tipFirst: { borderColor: 'rgba(255,79,249,0.55)', backgroundColor: 'rgba(255,79,249,0.08)' },
+  tipIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  tipTag: { fontSize: 12, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6 },
+  tipTitle: { color: '#FFF', fontSize: 16, fontWeight: '800', marginTop: 3 },
+  tipText: { color: OB.muted, fontSize: 14, lineHeight: 20, marginTop: 5 },
+  tipWhy: { color: OB.faint, fontSize: 12, marginTop: 8, fontStyle: 'italic' },
+
+  rhythm: { padding: 16, borderRadius: 22, backgroundColor: OB.card, borderWidth: 1, borderColor: OB.border },
+  rhythmHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  rhythmTitle: { color: '#FFF', fontSize: 16, fontWeight: '800' },
+  slots: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 },
+  slot: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 14, backgroundColor: 'rgba(79,195,255,0.12)', borderWidth: 1, borderColor: 'rgba(79,195,255,0.3)' },
+  slotDay: { color: '#FFF', fontSize: 14, fontWeight: '800' },
+  slotHour: { color: '#4FC3FF', fontSize: 12, fontWeight: '700', marginTop: 1 },
+  rhythmNote: { color: OB.faint, fontSize: 13, marginTop: 12 },
+
+  viraly: { padding: 16, borderRadius: 22, gap: 14, borderWidth: 1, borderColor: 'rgba(255,79,249,0.3)' },
+  viralyRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  viralyText: { color: '#FFF', fontSize: 15, fontWeight: '600', flex: 1 },
+
+  reassure: { color: OB.faint, fontSize: 13, textAlign: 'center', marginTop: 12 },
 });

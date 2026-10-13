@@ -94,7 +94,7 @@ export const handleGoogleAuthResponse = async (authResult) => {
       photoURL: user.photoURL,
     };
   } catch (error) {
-    console.error('Erreur lors de la connexion Google:', error);
+    console.warn('Erreur lors de la connexion Google:', error);
     throw {
       code: error.code || 'auth/unknown',
       message: error.message || 'Une erreur est survenue lors de la connexion',
@@ -123,7 +123,9 @@ const saveUserToFirestore = async (user) => {
   const userData = {
     uid: user.uid,
     email: user.email || null,
-    name: user.displayName || null,
+    // Nom du compte Apple/Google. Surtout pas « name » : c'est le prénom saisi dans le questionnaire,
+    // et Apple ne renvoie le nom qu'à la première connexion (sinon on l'effacerait à chaque reconnexion).
+    displayName: user.displayName || null,
     photoURL: user.photoURL || null,
     updatedAt: serverTimestamp(),
   };
@@ -251,6 +253,8 @@ export const saveQuestionnaireAnswers = async (userId, questionnaireAnswers) => 
       niches: questionnaireAnswers.niches || [],
       frequency: questionnaireAnswers.frequency?.[0] || null,
       goal: questionnaireAnswers.goal?.[0] || null,
+      blocker: questionnaireAnswers.blocker?.[0] || null,
+      ...(questionnaireAnswers.name?.[0] ? { name: questionnaireAnswers.name[0].trim() } : {}),
     }, { merge: true });
     
     console.log('✅ Réponses du questionnaire sauvegardées dans Firestore:', userId);
@@ -416,7 +420,7 @@ export const signInWithApple = async () => {
 
     return userData;
   } catch (error) {
-    console.error('Erreur lors de la connexion Apple:', error);
+    console.warn('Erreur lors de la connexion Apple:', error);
 
     // Si l'utilisateur a annulé
     if (error.code === 'ERR_REQUEST_CANCELED') {

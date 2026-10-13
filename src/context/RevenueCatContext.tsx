@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import Purchases, { CustomerInfo, PurchasesOffering, PurchasesPackage } from 'react-native-purchases';
+import Purchases, { CustomerInfo, PurchasesOffering, PurchasesPackage, LOG_LEVEL } from 'react-native-purchases';
+import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { useAuth } from './AuthContext';
 
@@ -7,19 +8,24 @@ import { useAuth } from './AuthContext';
  * Configuration RevenueCat (projet "viraly", app "viraly (App Store)")
  * - La clé publique (appl_...) peut être dans le code, ce n'est pas un secret.
  * - Entitlement "premium" : débloqué par viraly_premium_monthly et viraly_premium_yearly.
- * - Offering "default" : packages $rc_monthly et $rc_annual.
+ * - Offering "default" : packages $rc_monthly et $rc_annual (l'hebdomadaire n'est plus proposé depuis la 1.1).
  */
 const REVENUECAT_IOS_API_KEY = 'appl_wuzSzkxJOpRxiMgIJKDmiliVBiB';
 export const ENTITLEMENT_ID = 'premium';
+
+/**
+ * Viraly Dev (com.viraly.app.dev) n'existe pas dans App Store Connect : les abonnements
+ * y sont introuvables, c'est normal. Les achats se testent avec TestFlight (com.viraly.app).
+ * Dans Viraly Dev, on n'affiche donc pas ces erreurs en rouge.
+ */
+export const IS_DEV_VARIANT = Constants.expoConfig?.extra?.appVariant === 'development';
 
 interface RevenueCatContextType {
   isPremium: boolean;
   isLoading: boolean;
   currentOffering: PurchasesOffering | null;
-  weeklyPackage: PurchasesPackage | null;
   monthlyPackage: PurchasesPackage | null;
   annualPackage: PurchasesPackage | null;
-  weeklyPrice: string | null;
   monthlyPrice: string | null;
   annualPrice: string | null;
   customerInfo: CustomerInfo | null;
@@ -73,7 +79,8 @@ export const RevenueCatProvider: React.FC<{ children: ReactNode }> = ({ children
         console.warn('RevenueCat : aucune offering courante (vérifie l\'offering "default")');
       }
     } catch (error) {
-      console.error('Erreur chargement offering:', error);
+      if (IS_DEV_VARIANT) console.log('ℹ️ Abonnements indisponibles dans Viraly Dev (normal) : teste les achats avec TestFlight.');
+      else console.error('Erreur chargement offering:', error);
     }
   }, []);
 
@@ -84,6 +91,12 @@ export const RevenueCatProvider: React.FC<{ children: ReactNode }> = ({ children
       setIsLoading(false);
       return;
     }
+
+    // Journal RevenueCat : erreurs en rouge seulement dans la vraie app
+    Purchases.setLogHandler((level, message) => {
+      if (level === LOG_LEVEL.ERROR && !IS_DEV_VARIANT) console.error(`[RevenueCat] ${message}`);
+      else if (level === LOG_LEVEL.ERROR || level === LOG_LEVEL.WARN) console.log(`[RevenueCat] ${message}`);
+    });
 
     try {
       Purchases.configure({ apiKey: REVENUECAT_IOS_API_KEY });
@@ -109,8 +122,8 @@ export const RevenueCatProvider: React.FC<{ children: ReactNode }> = ({ children
     const syncUser = async () => {
       setIsLoading(true);
       try {
-        const isRealUser = !!user && !user.isGuest && user.uid !== 'guest';
-        if (isRealUser) {
+        if (user) {
+          // L'abonnement est rattaché au compte Firebase (même identifiant chez RevenueCat)
           const { customerInfo: info } = await Purchases.logIn(user!.uid);
           applyCustomerInfo(info);
         } else if (!(await Purchases.isAnonymous())) {
@@ -128,7 +141,7 @@ export const RevenueCatProvider: React.FC<{ children: ReactNode }> = ({ children
     };
 
     syncUser();
-  }, [isConfigured, user?.uid, user?.isGuest, applyCustomerInfo, checkPremiumStatus, loadOffering]);
+  }, [isConfigured, user?.uid, applyCustomerInfo, checkPremiumStatus, loadOffering]);
 
   const purchasePackage = async (pkg: PurchasesPackage): Promise<boolean> => {
     try {
@@ -144,6 +157,8 @@ export const RevenueCatProvider: React.FC<{ children: ReactNode }> = ({ children
   };
 
   const restorePurchases = async (): Promise<boolean> => {
+    if (!isConfigured) return false;
+    // Le reçu Apple est rattaché au compte connecté (Purchases.logIn a été fait avec son identifiant)
     const info = await Purchases.restorePurchases();
     return applyCustomerInfo(info);
   };
@@ -160,7 +175,6 @@ export const RevenueCatProvider: React.FC<{ children: ReactNode }> = ({ children
     }
   };
 
-  const weeklyPackage = currentOffering?.weekly ?? null;
   const monthlyPackage = currentOffering?.monthly ?? null;
   const annualPackage = currentOffering?.annual ?? null;
 
@@ -168,10 +182,8 @@ export const RevenueCatProvider: React.FC<{ children: ReactNode }> = ({ children
     isPremium,
     isLoading,
     currentOffering,
-    weeklyPackage,
     monthlyPackage,
     annualPackage,
-    weeklyPrice: weeklyPackage?.product.priceString ?? null,
     monthlyPrice: monthlyPackage?.product.priceString ?? null,
     annualPrice: annualPackage?.product.priceString ?? null,
     customerInfo,

@@ -1,31 +1,38 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Dimensions, TouchableOpacity, ActivityIndicator, Animated, Platform } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform, Image, Linking } from 'react-native';
+import { MotiView } from 'moti';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from '../hooks/useAuth';
-import { useNavigation } from '@react-navigation/native';
-import { theme } from '../theme';
-import { ScreenBackground } from '../components/ui/ScreenBackground';
+import { Check, ChevronLeft } from 'lucide-react-native';
 import { EmailAuthModal } from '../components/EmailAuthModal';
-import { signInWithApple, saveQuestionnaireAnswers } from '../services/authService';
+import { signInWithApple } from '../services/authService';
 import { useGoogleAuth } from '../hooks/useGoogleAuth';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Haptics from 'expo-haptics';
+import Constants from 'expo-constants';
+import { OnboardingShell, TextLink, OB } from '../components/onboarding/OnboardingUI';
 
-const { width, height } = Dimensions.get('window');
+const TERMS_URL = 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
+const IS_DEV_VARIANT = Constants.expoConfig?.extra?.appVariant === 'development';
+const DEV_SETUP_HINT = "Viraly Dev doit d'abord être ajoutée dans Firebase (app iOS com.viraly.app.dev). En attendant, connecte-toi avec un e-mail.";
+const PRIVACY_URL = 'https://viraly-production-b0cd.up.railway.app/confidentialite';
+
+const BENEFITS = [
+  'Ton plan personnalisé sauvegardé',
+  'Ton profil et ton calendrier sur tous tes appareils',
+  'Les tendances de ta niche chaque semaine',
+];
 
 interface LoginScreenProps {
   navigation: any;
   route?: {
     params?: {
       answers?: Record<string, string[]>;
+      mode?: 'login' | 'signup';
     };
   };
 }
 
 export default function LoginScreen({ navigation, route }: LoginScreenProps) {
-  const { user, setUser } = useAuth();
   const [emailModalVisible, setEmailModalVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -33,10 +40,9 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
   const [googleLoading, setGoogleLoading] = useState(false);
   const { loginWithGoogle, ready: googleReady } = useGoogleAuth();
   const questionnaireAnswers = route?.params?.answers;
+  const isLoginMode = route?.params?.mode === 'login' && !questionnaireAnswers;
+  const firstName = (questionnaireAnswers?.name?.[0] ?? '').trim().split(/\s+/)[0];
 
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(50)).current;
-  const scaleAnim = useRef(new Animated.Value(0.9)).current;
 
   // Vérifier si Apple Sign In est disponible
   useEffect(() => {
@@ -49,60 +55,9 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
     checkAppleAuth();
   }, []);
 
-  useEffect(() => {
-    // Animation d'entrée
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        tension: 50,
-        friction: 7,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, []);
 
-  const hasNavigatedRef = useRef(false);
-
-  // Si l'utilisateur est déjà connecté, rediriger vers Main
-  // Protection contre les boucles avec hasNavigatedRef
-  useEffect(() => {
-    // Condition stricte : user doit être défini et non null
-    if (user !== null && user !== undefined && !hasNavigatedRef.current) {
-      hasNavigatedRef.current = true;
-
-      // Si c'est un invité, navigation déjà gérée par handleGuestMode
-      if (user.isGuest === true || user.uid === 'guest') {
-        return;
-      }
-
-      // Sauvegarder les réponses si présentes (en arrière-plan, non bloquant)
-      if (questionnaireAnswers && user.uid !== 'guest' && user.isGuest !== true) {
-        saveQuestionnaireAnswers(user.uid, questionnaireAnswers)
-          .then(() => {
-            console.log('✅ Réponses du questionnaire sauvegardées');
-          })
-          .catch((error) => {
-            console.warn('⚠️ Erreur lors de la sauvegarde des réponses:', error);
-          });
-      }
-      
-      // Naviguer vers Main (Dashboard) - une seule fois
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Main' }],
-      });
-    }
-  }, [user]); // Dépendances minimales - seulement user
+  // Pas de navigation ici : dès que la connexion réussit, la session choisit l'écran suivant
+  // (accueil si le compte a déjà un profil, sinon enregistrement du questionnaire puis Premium).
 
   const handleAppleLogin = async () => {
     try {
@@ -114,14 +69,14 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
       
       console.log('✅ Utilisateur connecté avec Apple:', userData);
       
-      // Sauvegarder les réponses si présentes et naviguer vers Main
-      // Le useEffect avec user va gérer la sauvegarde et navigation
+      // La session prend le relais (profil du compte ou questionnaire à enregistrer)
     } catch (err: any) {
-      console.error('❌ Erreur de connexion Apple:', err);
+      console.warn('Connexion Apple :', err?.message ?? err);
       
       // Ne pas afficher d'erreur si l'utilisateur a annulé
       if (err.code !== 'auth/cancelled') {
-        setError(err.message || 'Une erreur est survenue lors de la connexion avec Apple');
+        const audience = /audience/i.test(String(err?.message ?? err?.originalError?.message ?? ''));
+        setError(IS_DEV_VARIANT && audience ? DEV_SETUP_HINT : 'La connexion avec Apple a échoué. Réessaie.');
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
     } finally {
@@ -130,6 +85,11 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
   };
 
   const handleGoogleLogin = async () => {
+    // Viraly Dev sans client Google à elle : Google refuserait (redirect_uri_mismatch)
+    if (Constants.expoConfig?.extra?.googleDevClientMissing) {
+      setError(DEV_SETUP_HINT);
+      return;
+    }
     try {
       setError(null);
       setGoogleLoading(true);
@@ -138,10 +98,10 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
       const userData = await loginWithGoogle();
       if (userData) {
         console.log('✅ Utilisateur connecté avec Google:', userData.uid);
-        // La sauvegarde du questionnaire et la navigation sont gérées par le useEffect sur user
+        // La session prend le relais (profil du compte ou questionnaire à enregistrer)
       }
     } catch (err: any) {
-      console.error('❌ Erreur de connexion Google:', err);
+      console.warn('Connexion Google :', err?.message ?? err);
       setError('La connexion avec Google a échoué. Réessaie.');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
@@ -151,377 +111,131 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
 
   const handleEmailAuthSuccess = async () => {
     setEmailModalVisible(false);
-    // La sauvegarde et navigation seront gérées par le useEffect avec user
+    // La session prend le relais (profil du compte ou questionnaire à enregistrer)
   };
 
-  const handleGuestMode = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    
-    // Créer un utilisateur invité local (dummy user)
-    const guestUser = {
-      uid: 'guest',
-      email: null,
-      isGuest: true,
-    };
-    
-    // Définir l'utilisateur invité dans le contexte
-    setUser(guestUser);
-    
-    // Rediriger DIRECTEMENT vers Dashboard sans appel Firestore
-    // Utiliser reset pour éviter de pouvoir revenir en arrière
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'Main' }],
-    });
-  };
+  const busy = loading || googleLoading;
 
   return (
-    <ScreenBackground>
-      <View style={styles.container}>
-        <Animated.View
-          style={[
-            styles.content,
-            {
-              opacity: fadeAnim,
-              transform: [
-                { translateY: slideAnim },
-                { scale: scaleAnim },
-              ],
-            },
-          ]}
-        >
-          {/* Logo / Titre */}
-          <View style={styles.header}>
-            <View style={styles.logoContainer}>
-              <LinearGradient
-                colors={theme.colors.gradient.primary}
-                style={styles.logoGradient}
-              >
-                <Ionicons name="videocam" size={48} color="white" />
-              </LinearGradient>
+    <OnboardingShell
+      contentStyle={{ justifyContent: 'center' }}
+      footer={
+        <Text style={styles.legal}>
+          En continuant, tu acceptes les{' '}
+          <Text style={styles.legalLink} onPress={() => Linking.openURL(TERMS_URL)}>conditions d’utilisation</Text>
+          {' '}et la{' '}
+          <Text style={styles.legalLink} onPress={() => Linking.openURL(PRIVACY_URL)}>politique de confidentialité</Text>.
+        </Text>
+      }
+    >
+      {navigation.canGoBack() ? (
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.back} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <ChevronLeft size={24} color="#FFF" />
+        </TouchableOpacity>
+      ) : null}
+
+      <MotiView from={{ opacity: 0, translateY: 12 }} animate={{ opacity: 1, translateY: 0 }} style={styles.header}>
+        <View style={styles.logoGlow}>
+          <Image source={require('../../assets/logo-mark.png')} style={styles.logo} />
+        </View>
+        <Text style={styles.title}>
+          {isLoginMode ? 'Content de te revoir' : firstName ? `Sauvegarde ton plan, ${firstName}` : 'Crée ton compte'}
+        </Text>
+        <Text style={styles.subtitle}>
+          {isLoginMode
+            ? 'Connecte-toi pour retrouver tes analyses, ton plan et ton calendrier.'
+            : 'Un compte gratuit, en un geste. Pas de mot de passe à retenir avec Apple ou Google.'}
+        </Text>
+      </MotiView>
+
+      {!isLoginMode ? (
+        <MotiView from={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 150 }} style={styles.benefits}>
+          {BENEFITS.map((b) => (
+            <View key={b} style={styles.benefit}>
+              <View style={styles.benefitCheck}><Check size={13} color="#FFF" strokeWidth={3} /></View>
+              <Text style={styles.benefitText}>{b}</Text>
             </View>
-            <Text style={styles.title}>Créer un compte</Text>
-            <Text style={styles.subtitle}>
-              Enregistre-toi pour sauvegarder ton plan personnalisé et commencer à analyser tes vidéos
-            </Text>
-          </View>
+          ))}
+        </MotiView>
+      ) : null}
 
-          {/* Boutons de connexion */}
-          <View style={styles.buttonContainer}>
-            {/* Bouton Apple (iOS seulement) */}
-            {appleAvailable && (
-              <TouchableOpacity
-                onPress={handleAppleLogin}
-                disabled={loading}
-                activeOpacity={0.8}
-                style={styles.appleButton}
-              >
-                <BlurView intensity={20} tint="dark" style={styles.appleButtonBlur}>
-                  <LinearGradient
-                    colors={['rgba(0, 0, 0, 0.8)', 'rgba(0, 0, 0, 0.6)']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.appleButtonGradient}
-                  >
-                    {loading ? (
-                      <View style={styles.loadingContainer}>
-                        <ActivityIndicator size="small" color="#FFFFFF" />
-                        <Text style={styles.buttonText}>Connexion...</Text>
-                      </View>
-                    ) : (
-                      <>
-                        <Ionicons name="logo-apple" size={24} color="#FFFFFF" style={styles.appleIcon} />
-                        <Text style={styles.buttonText}>Créer avec Apple</Text>
-                      </>
-                    )}
-                  </LinearGradient>
-                </BlurView>
-              </TouchableOpacity>
-            )}
+      <MotiView from={{ opacity: 0, translateY: 12 }} animate={{ opacity: 1, translateY: 0 }} transition={{ delay: 250 }} style={styles.buttons}>
+        {appleAvailable ? (
+          loading ? (
+            <View style={[styles.btn, styles.btnWhite]}><ActivityIndicator color="#000" /></View>
+          ) : (
+            <AppleAuthentication.AppleAuthenticationButton
+              buttonType={isLoginMode ? AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN : AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
+              buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
+              cornerRadius={28}
+              style={styles.appleBtn}
+              onPress={handleAppleLogin}
+            />
+          )
+        ) : null}
 
-            {/* Bouton Google */}
-            <TouchableOpacity
-              onPress={handleGoogleLogin}
-              disabled={loading || googleLoading || !googleReady}
-              activeOpacity={0.8}
-              style={styles.emailButton}
-            >
-              <BlurView intensity={20} tint="dark" style={styles.emailButtonBlur}>
-                <LinearGradient
-                  colors={['rgba(255, 255, 255, 0.1)', 'rgba(255, 255, 255, 0.05)']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.emailButtonGradient}
-                >
-                  {googleLoading ? (
-                    <View style={styles.loadingContainer}>
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                      <Text style={styles.buttonText}>Connexion...</Text>
-                    </View>
-                  ) : (
-                    <>
-                      <Ionicons name="logo-google" size={24} color="#FFFFFF" style={styles.emailIcon} />
-                      <Text style={styles.buttonText}>Continuer avec Google</Text>
-                    </>
-                  )}
-                </LinearGradient>
-              </BlurView>
-            </TouchableOpacity>
-
-            {/* Bouton Email/Password */}
-            <TouchableOpacity
-              onPress={() => {
-                setEmailModalVisible(true);
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              }}
-              disabled={loading}
-              activeOpacity={0.8}
-              style={styles.emailButton}
-            >
-              <BlurView intensity={20} tint="dark" style={styles.emailButtonBlur}>
-                <LinearGradient
-                  colors={['rgba(255, 255, 255, 0.1)', 'rgba(255, 255, 255, 0.05)']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.emailButtonGradient}
-                >
-                  <Ionicons name="mail-outline" size={24} color="#FFFFFF" style={styles.emailIcon} />
-                  <Text style={styles.buttonText}>Créer avec Email</Text>
-                </LinearGradient>
-              </BlurView>
-            </TouchableOpacity>
-
-
-            {/* Bouton Mode Invité */}
-            <TouchableOpacity
-              onPress={handleGuestMode}
-              disabled={loading}
-              activeOpacity={0.8}
-              style={styles.guestButton}
-            >
-              <BlurView intensity={20} tint="dark" style={styles.guestButtonBlur}>
-                <LinearGradient
-                  colors={['rgba(143, 91, 255, 0.2)', 'rgba(143, 91, 255, 0.1)']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.guestButtonGradient}
-                >
-                  <Ionicons name="person-outline" size={24} color="#FFFFFF" style={styles.guestIcon} />
-                  <Text style={styles.buttonText}>Continuer en tant qu'invité</Text>
-                </LinearGradient>
-              </BlurView>
-            </TouchableOpacity>
-          </View>
-
-          {/* Message d'erreur */}
-          {error && (
-            <Animated.View
-              style={[
-                styles.errorContainer,
-                {
-                  opacity: fadeAnim,
-                },
-              ]}
-            >
-              <BlurView intensity={20} tint="dark" style={styles.errorBlur}>
-                <View style={styles.errorContent}>
-                  <Ionicons name="alert-circle" size={20} color={theme.colors.error} />
-                  <Text style={styles.errorText}>{error}</Text>
-                </View>
-              </BlurView>
-            </Animated.View>
+        <TouchableOpacity onPress={handleGoogleLogin} disabled={busy || !googleReady} activeOpacity={0.85} style={[styles.btn, appleAvailable ? styles.btnOutline : styles.btnWhite]}>
+          {googleLoading ? <ActivityIndicator color={appleAvailable ? '#FFF' : '#000'} /> : (
+            <>
+              <Ionicons name="logo-google" size={20} color={appleAvailable ? '#FFF' : '#1F1F1F'} />
+              <Text style={[styles.btnText, !appleAvailable && { color: '#1F1F1F' }]}>Continuer avec Google</Text>
+            </>
           )}
+        </TouchableOpacity>
 
-          {/* Footer */}
-          <View style={styles.footer}>
-            <Text style={styles.footerText}>
-              En te connectant, tu acceptes nos conditions d'utilisation
-            </Text>
+        <TouchableOpacity
+          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setEmailModalVisible(true); }}
+          disabled={busy}
+          activeOpacity={0.85}
+          style={[styles.btn, styles.btnOutline]}
+        >
+          <Ionicons name="mail-outline" size={20} color="#FFF" />
+          <Text style={styles.btnText}>Continuer avec un e-mail</Text>
+        </TouchableOpacity>
+
+        {error ? (
+          <View style={styles.error}>
+            <Ionicons name="alert-circle" size={18} color="#FF6B8A" />
+            <Text style={styles.errorText}>{error}</Text>
           </View>
-        </Animated.View>
+        ) : null}
 
-        {/* Modal Email/Password */}
-        <EmailAuthModal
-          visible={emailModalVisible}
-          onClose={() => setEmailModalVisible(false)}
-          onSuccess={handleEmailAuthSuccess}
-        />
-      </View>
-    </ScreenBackground>
+      </MotiView>
+
+      <EmailAuthModal
+        visible={emailModalVisible}
+        onClose={() => setEmailModalVisible(false)}
+        onSuccess={handleEmailAuthSuccess}
+      />
+    </OnboardingShell>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 24,
+  back: { position: 'absolute', top: 60, left: 24, width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(255,255,255,0.07)', alignItems: 'center', justifyContent: 'center', zIndex: 2 },
+  header: { alignItems: 'center' },
+  logoGlow: {
+    borderRadius: 28, shadowColor: OB.pink, shadowOpacity: 0.6, shadowRadius: 26, shadowOffset: { width: 0, height: 0 }, elevation: 12,
   },
-  content: {
-    width: '100%',
-    maxWidth: 400,
-    alignItems: 'center',
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 48,
-  },
-  logoContainer: {
-    marginBottom: 24,
-  },
-  logoGradient: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: theme.colors.primary,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 20,
-    elevation: 8,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    textAlign: 'center',
-    marginBottom: 12,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: theme.colors.text.secondary,
-    textAlign: 'center',
-    lineHeight: 24,
-    paddingHorizontal: 20,
-  },
-  buttonContainer: {
-    width: '100%',
-    gap: 16,
-    marginBottom: 24,
-  },
-  appleButton: {
-    width: '100%',
-    borderRadius: 28,
-    overflow: 'hidden',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 6,
-  },
-  appleButtonBlur: {
-    borderRadius: 28,
-    overflow: 'hidden',
-  },
-  appleButtonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 18,
-    paddingHorizontal: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  emailButton: {
-    width: '100%',
-    borderRadius: 28,
-    overflow: 'hidden',
-    shadowColor: '#8F5BFF',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 6,
-  },
-  emailButtonBlur: {
-    borderRadius: 28,
-    overflow: 'hidden',
-  },
-  emailButtonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 18,
-    paddingHorizontal: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  appleIcon: {
-    marginRight: 12,
-  },
-  emailIcon: {
-    marginRight: 12,
-  },
-  guestButton: {
-    width: '100%',
-    borderRadius: 28,
-    overflow: 'hidden',
-    shadowColor: '#8F5BFF',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 6,
-    marginTop: 8,
-  },
-  guestButtonBlur: {
-    borderRadius: 28,
-    overflow: 'hidden',
-  },
-  guestButtonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 18,
-    paddingHorizontal: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(143, 91, 255, 0.3)',
-  },
-  guestIcon: {
-    marginRight: 12,
-  },
-  buttonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    letterSpacing: 0.5,
-  },
-  loadingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  errorContainer: {
-    width: '100%',
-    marginBottom: 24,
-  },
-  errorBlur: {
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  errorContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: 'rgba(255, 107, 107, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 107, 107, 0.3)',
-    gap: 12,
-  },
-  errorText: {
-    flex: 1,
-    fontSize: 14,
-    color: theme.colors.error,
-    lineHeight: 20,
-  },
-  footer: {
-    marginTop: 32,
-    paddingHorizontal: 20,
-  },
-  footerText: {
-    fontSize: 12,
-    color: theme.colors.text.tertiary,
-    textAlign: 'center',
-    lineHeight: 18,
-  },
+  logo: { width: 88, height: 88, borderRadius: 26 },
+  title: { color: '#FFF', fontSize: 28, lineHeight: 34, fontWeight: '900', textAlign: 'center', marginTop: 22, letterSpacing: -0.3 },
+  subtitle: { color: OB.muted, fontSize: 15, lineHeight: 22, textAlign: 'center', marginTop: 10, paddingHorizontal: 8 },
+
+  benefits: { gap: 12, marginTop: 26, padding: 16, borderRadius: 20, backgroundColor: OB.card, borderWidth: 1, borderColor: OB.border },
+  benefit: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  benefitCheck: { width: 22, height: 22, borderRadius: 11, backgroundColor: '#22C55E', alignItems: 'center', justifyContent: 'center' },
+  benefitText: { color: '#FFF', fontSize: 15, fontWeight: '600', flex: 1 },
+
+  buttons: { gap: 12, marginTop: 26 },
+  appleBtn: { width: '100%', height: 56 },
+  btn: { height: 56, borderRadius: 28, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
+  btnWhite: { backgroundColor: '#FFFFFF' },
+  btnOutline: { borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.28)', backgroundColor: 'rgba(255,255,255,0.04)' },
+  btnText: { color: '#FFF', fontSize: 17, fontWeight: '700' },
+
+  error: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 14, backgroundColor: 'rgba(255,107,138,0.12)', borderWidth: 1, borderColor: 'rgba(255,107,138,0.35)' },
+  errorText: { color: '#FFD5DE', fontSize: 13, flex: 1, lineHeight: 18 },
+
+  legal: { color: OB.faint, fontSize: 12, lineHeight: 17, textAlign: 'center', paddingHorizontal: 12 },
+  legalLink: { color: OB.muted, textDecorationLine: 'underline' },
 });

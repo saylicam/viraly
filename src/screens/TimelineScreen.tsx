@@ -1,771 +1,402 @@
-import React, { useState, useCallback } from 'react';
-import { pickVideo } from '../utils/pickVideo';
-import { View, Text, ScrollView, Alert, TouchableOpacity, Dimensions, StyleSheet } from 'react-native';
+import React, { useState, useCallback, useEffect } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { MotiView } from 'moti';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
-import { Sparkles, Upload } from 'lucide-react-native';
+import { Upload, Flame, Wand2, ChevronRight, Plus, CalendarDays, Target, Sprout, Mountain, TrendingDown, Music2, Play } from 'lucide-react-native';
 
-import { ScreenBackground } from '../components/ui/ScreenBackground';
-import { theme } from '../theme';
+import { OnboardingBackground } from '../components/onboarding/OnboardingUI';
+import AnalyzeHero from '../components/home/AnalyzeHero';
+import AccountCard from '../components/home/AccountCard';
+import { useRevenueCat } from '../context/RevenueCatContext';
+import { renameAiPublishTasks } from '../services/calendarService';
 import TaskList from './Calendar/TaskList';
 import AddTaskModal from './Calendar/AddTaskModal';
 import { getTasksByDate, CalendarTask, getTasks } from '../services/calendarService';
 import { useAuth } from '../hooks/useAuth';
 import { toLocalDateString } from '../utils/date';
+import { pickVideo } from '../utils/pickVideo';
+import { useCreatorProfile, firstName, NICHE_LABELS, POSTS_PER_WEEK } from '../services/creatorProfile';
+import { useAnalysisHistory, historyStats } from '../services/analysisHistory';
+import { apiService, resolveApiUrl } from '../services/api';
+import { useAnalysisGate } from '../hooks/useAnalysisGate';
 
-const { width } = Dimensions.get('window');
-const DAY_WIDTH = (width - 48 - 52) / 7; // Réduire pour laisser place à l'icône calendrier
+const PINK = '#FF4FF9';
+const VIOLET = '#B371FF';
+const CARD_BG = '#1B0730';
+const CARD_BORDER = 'rgba(179, 113, 255, 0.3)';
+
+const DAY_LETTERS = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
+const STAGES = {
+  emerging: { label: 'Émergente', color: '#42FFB0', Icon: Sprout },
+  peak: { label: 'Au sommet', color: '#FFD84F', Icon: Mountain },
+  declining: { label: 'En déclin', color: '#A1A1AA', Icon: TrendingDown },
+} as const;
+
+const scoreColor = (s: number) => (s >= 80 ? '#42FFB0' : s >= 60 ? '#4FC3FF' : s >= 40 ? '#FFB85C' : '#FF6B8A');
+const relativeDay = (iso: string) => {
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+  if (days <= 0) return 'Aujourd’hui';
+  if (days === 1) return 'Hier';
+  if (days < 7) return `Il y a ${days} jours`;
+  return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+};
+
+/** La tendance à ne pas rater cette semaine dans la niche du créateur. */
+const useTrendOfWeek = (niche?: string) => {
+  const [trend, setTrend] = useState<any>(null);
+  useEffect(() => {
+    let alive = true;
+    apiService.getTrends(niche).then((res) => {
+      if (!alive || !res.success) return;
+      const d = (res.data as any)?.data;
+      if (!d) return;
+      const sound = (d.sounds ?? []).find((s: any) => s.stage === 'emerging') ?? d.sounds?.[0];
+      const video = d.videos?.[0];
+      if (sound) setTrend({ kind: 'sound', item: sound });
+      else if (video) setTrend({ kind: 'video', item: video });
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [niche]);
+  return trend;
+};
 
 export default function TimelineScreen() {
   const navigation = useNavigation<any>();
+  const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const [selectedDate, setSelectedDate] = useState<string>(() => {
-    return toLocalDateString();
-  });
+  const gate = useAnalysisGate(navigation);
+  const { profile } = useCreatorProfile();
+  const history = useAnalysisHistory();
+  const { isPremium } = useRevenueCat();
+  const stats = historyStats(history);
+  const name = firstName(profile);
+  const niche = profile?.niches?.[0];
+  const trend = useTrendOfWeek(niche);
+
+  const [selectedDate, setSelectedDate] = useState<string>(() => toLocalDateString());
   const [tasks, setTasks] = useState<CalendarTask[]>([]);
   const [allTasks, setAllTasks] = useState<CalendarTask[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
-
-  // Recharger à chaque fois que l'écran est affiché (ex: tâche ajoutée depuis un autre onglet),
-  // quand l'utilisateur change (connexion) ou quand la date sélectionnée change.
-  useFocusEffect(
-    useCallback(() => {
-      loadAllTasks();
-      loadTasks();
-    }, [user?.uid, selectedDate])
-  );
 
   const loadAllTasks = async () => {
     try {
       const all = await getTasks(user?.uid || null);
       setAllTasks(all);
-    } catch (error) {
-      console.error('Erreur chargement toutes les tâches:', error);
-      setAllTasks([]);
-    }
+      // Publications prévues par l'IA avec une ancienne niche : on les remet à jour
+      const label = niche ? NICHE_LABELS[niche] : null;
+      if (label && all.some((t) => t.createdBy === 'ai' && t.type === 'publish' && t.title.startsWith('Publier une vidéo') && t.title !== `Publier une vidéo ${label}`)) {
+        const n = await renameAiPublishTasks(niche, user?.uid ?? null).catch(() => 0);
+        if (n) setAllTasks(await getTasks(user?.uid || null));
+      }
+    } catch { setAllTasks([]); }
   };
-
   const loadTasks = async () => {
-    setIsLoading(true);
-    try {
-      const dateTasks = await getTasksByDate(selectedDate, user?.uid || null);
-      setTasks(dateTasks);
-    } catch (error) {
-      console.error('Erreur chargement tâches:', error);
-      setTasks([]);
-    } finally {
-      setIsLoading(false);
-    }
+    try { setTasks(await getTasksByDate(selectedDate, user?.uid || null)); } catch { setTasks([]); }
   };
 
-  const handleDateSelect = (date: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setSelectedDate(date);
-  };
-
-  const handleCalendarPress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    navigation.navigate('Calendar');
-  };
+  useFocusEffect(useCallback(() => { loadAllTasks(); loadTasks(); }, [user?.uid, selectedDate, niche])); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleAnalyze = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    if (!(await gate())) return;
     const video = await pickVideo();
-    if (video) {
-      navigation.navigate('VideoAnalyzing', { videoUri: video.uri });
-    }
+    if (video) navigation.navigate('VideoAnalyzing', { videoUri: video.uri });
   };
 
-  const handleAddTask = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setModalVisible(true);
-  };
+  const handleTaskAdded = () => { setModalVisible(false); loadTasks(); loadAllTasks(); };
 
-  const handleTaskAdded = () => {
-    setModalVisible(false);
-    loadTasks();
-    loadAllTasks();
-  };
-
-  // Générer les 7 jours de la semaine pour le calendrier horizontal
+  // Semaine en cours, du lundi au dimanche
   const today = new Date();
-  const weekDays: Date[] = [];
-  const startOfWeek = new Date(today);
-  startOfWeek.setDate(today.getDate() - today.getDay()); // Dimanche
-  
-  for (let i = 0; i < 7; i++) {
-    const day = new Date(startOfWeek);
-    day.setDate(startOfWeek.getDate() + i);
-    weekDays.push(day);
-  }
+  const monday = new Date(today);
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+  const weekDays = Array.from({ length: 7 }, (_, i) => { const d = new Date(monday); d.setDate(monday.getDate() + i); return d; });
+  const todayStr = toLocalDateString();
 
-  const formatDayName = (date: Date) => {
-    const days = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
-    return days[date.getDay()];
+  const nextPost = allTasks.find((t) => t.date >= todayStr && t.type === 'publish') ?? allTasks.find((t) => t.date >= todayStr) ?? null;
+
+  // Objectif : nombre de vidéos par semaine choisi dans le questionnaire
+  const target = POSTS_PER_WEEK[profile?.frequency ?? ''] ?? 3;
+  const done = Math.min(stats.thisWeek, target);
+  const goalReached = stats.thisWeek >= target;
+
+  const dateLabel = today.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+  const initials = (name || 'V').slice(0, 1).toUpperCase();
+
+  const openTrend = () => {
+    if (!trend) return;
+    const it = trend.item;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    navigation.navigate('TrendPlan', {
+      kind: trend.kind,
+      id: it.id,
+      title: trend.kind === 'sound' ? it.title : `@${it.author}`,
+      subtitle: trend.kind === 'sound' ? it.artist : it.soundTitle,
+      cover: it.cover,
+      url: it.url,
+      stage: it.stage,
+      niche,
+      level: profile?.level,
+    });
   };
 
-  const getDateString = (date: Date) => {
-    return toLocalDateString(date);
-  };
-
-  const hasTaskOnDate = (dateStr: string) => {
-    return allTasks.some(task => task.date === dateStr);
-  };
-
-  const isSelected = (date: Date) => {
-    return getDateString(date) === selectedDate;
-  };
-
-  // Tâche du jour sélectionné (pour PROCHAIN POST) ou prochaine tâche
-  const nextTask = tasks.length > 0 
-    ? tasks[0] 
-    : allTasks.find(task => task.date >= selectedDate) || null;
-
-  // Données fictives pour PROCHAIN POST si aucune tâche
-  const displayNextPost = nextTask || {
-    title: 'Voyage entre potes',
-    date: toLocalDateString(new Date(Date.now() + 2 * 24 * 60 * 60 * 1000)),
-    hour: '19:58',
-    type: 'publish' as const,
-  };
+  const stage = trend?.item?.stage ? STAGES[trend.item.stage as keyof typeof STAGES] : null;
+  const trendCover = resolveApiUrl(trend?.item?.cover ?? null);
 
   return (
-    <ScreenBackground>
-      <ScrollView
-        contentContainerStyle={{ paddingBottom: 120 }}
-        showsVerticalScrollIndicator={false}
-        className="flex-1"
-      >
-        {/* 1️⃣ Header réduit */}
-        <View className="px-6 pt-14 pb-1">
-          <Text style={styles.welcomeTitle}>Bonjour Créateur 👋</Text>
-          <Text style={styles.welcomeSubtitle}>Prêt à analyser tes vidéos ?</Text>
-        </View>
-
-        {/* 2️⃣ Calendrier horizontal avec icône calendrier à droite */}
-        <View className="px-6 mb-4">
-          <View style={styles.calendarHeaderRow}>
-            <View style={styles.calendarRow}>
-              {/* Jours de la semaine */}
-              <View style={styles.dayNamesRow}>
-                {weekDays.map((day, index) => (
-                  <View key={`day-${index}`} style={styles.dayNameContainer}>
-                    <Text style={styles.dayNameText}>{formatDayName(day)}</Text>
-                  </View>
-                ))}
-              </View>
-              
-              {/* Dates avec pastilles */}
-              <View style={styles.datesRow}>
-                {weekDays.map((day, index) => {
-                  const dateStr = getDateString(day);
-                  const dayNum = day.getDate();
-                  const selected = isSelected(day);
-                  const hasTask = hasTaskOnDate(dateStr);
-
-                  return (
-                    <TouchableOpacity
-                      key={`date-${index}`}
-                      style={styles.dateContainer}
-                      onPress={() => handleDateSelect(dateStr)}
-                      activeOpacity={0.7}
-                    >
-                      <View style={[styles.dateCircle, selected && styles.dateCircleSelected]}>
-                        <Text style={[styles.dateText, selected && styles.dateTextSelected]}>
-                          {dayNum}
-                        </Text>
-                      </View>
-                      {hasTask && (
-                        <View style={[styles.taskDot, selected && styles.taskDotSelected]} />
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-            
-            {/* Icône calendrier à droite */}
-            <TouchableOpacity
-              onPress={handleCalendarPress}
-              activeOpacity={0.7}
-              style={styles.calendarIconButton}
-            >
-              <BlurView intensity={20} tint="dark" style={styles.calendarIconButtonBlur}>
-                <LinearGradient
-                  colors={['rgba(123, 51, 247, 0.2)', 'rgba(255, 79, 249, 0.15)']}
-                  style={styles.calendarIconButtonGradient}
-                >
-                  <Ionicons name="calendar" size={22} color="#B371FF" />
-                </LinearGradient>
-              </BlurView>
-            </TouchableOpacity>
+    <View style={styles.root}>
+      <OnboardingBackground />
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 16 }]} showsVerticalScrollIndicator={false}>
+        {/* En-tête */}
+        <View style={styles.header}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.hello}>{name ? `Salut ${name} 👋` : 'Salut 👋'}</Text>
+            <Text style={styles.date}>
+              {dateLabel.charAt(0).toUpperCase() + dateLabel.slice(1)}{niche ? ` · ${NICHE_LABELS[niche] ?? niche}` : ''}
+            </Text>
           </View>
-        </View>
-
-        {/* 3️⃣ CTA Analyse IA - Carte premium avec contour néon */}
-        <View className="px-6 mb-4">
-          <MotiView
-            from={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ type: 'spring', delay: 100, damping: 15 }}
-          >
-            <MotiView
-              from={{ scale: 1 }}
-              animate={{ scale: [1, 1.01, 1] }}
-              transition={{
-                type: 'timing',
-                duration: 2500,
-                loop: true,
-                repeatReverse: true,
-              }}
-            >
-              <TouchableOpacity
-                activeOpacity={0.8}
-                onPress={handleAnalyze}
-                style={styles.analyzeCapsuleContainer}
-              >
-                <BlurView intensity={25} tint="dark" style={styles.analyzeCapsule}>
-                  <View style={styles.analyzeCapsuleContent}>
-                    {/* Badge IA en haut à droite */}
-                    <View style={styles.analyzeBadge}>
-                      <Text style={styles.analyzeBadgeText}>IA</Text>
-                    </View>
-
-                    {/* Icône Upload/Video centrée */}
-                    <View style={styles.analyzeIconContainer}>
-                      <Upload size={56} color="#FFFFFF" strokeWidth={2.5} style={{ opacity: 0.95 }} />
-                    </View>
-
-                    {/* Titre centré */}
-                    <Text style={styles.analyzeCapsuleTitle}>
-                      Téléverse ta vidéo et découvre son potentiel viral
-                    </Text>
-
-                    {/* Sous-titre centré */}
-                    <Text style={styles.analyzeCapsuleSubtitle}>
-                      Analyse IA en 10 secondes • Score viral • Conseils IA
-                    </Text>
-                  </View>
-                </BlurView>
-              </TouchableOpacity>
-            </MotiView>
-          </MotiView>
-        </View>
-
-        {/* 4️⃣ Ajouter une tâche - CTA secondaire discret */}
-        <View className="px-6 mb-6">
-          <TouchableOpacity
-            onPress={handleAddTask}
-            activeOpacity={0.85}
-            style={styles.addTaskButton}
-          >
-            <BlurView intensity={20} tint="dark" style={styles.addTaskButtonBlur}>
-              <LinearGradient
-                colors={['rgba(123, 51, 247, 0.1)', 'rgba(255, 79, 249, 0.08)']}
-                style={styles.addTaskButtonGradient}
-              >
-                <Ionicons name="add" size={18} color="#B371FF" style={{ marginRight: 10 }} />
-                <Text style={styles.addTaskText}>Ajouter une tâche</Text>
-              </LinearGradient>
-            </BlurView>
+          <TouchableOpacity onPress={() => navigation.navigate('Profile')} activeOpacity={0.85}>
+            <LinearGradient colors={[PINK, '#9013FE']} style={styles.avatar}>
+              {profile?.tiktokPreview?.avatar && profile.tiktokPreview.handle === profile.tiktok ? (
+                <Image source={{ uri: profile.tiktokPreview.avatar }} style={{ width: '88%', height: '88%', borderRadius: 999 }} />
+              ) : (
+                <Text style={styles.avatarText}>{initials}</Text>
+              )}
+            </LinearGradient>
           </TouchableOpacity>
         </View>
 
-        {/* Liste des tâches du jour sélectionné */}
-        {tasks.length > 0 && (
-          <View className="px-6 mb-6">
-            <Text style={styles.tasksSectionTitle}>Tâches du jour</Text>
-            <TaskList tasks={tasks} onTaskDeleted={loadTasks} />
-          </View>
-        )}
+        {/* Fonction phare : l'analyse vidéo */}
+        <View style={{ marginBottom: 22 }}>
+          <AnalyzeHero onPress={handleAnalyze} lastScore={history[0]?.score ?? null} potential={history[0]?.result?.score_potentiel ?? null} freeLeft={isPremium ? null : Math.max(0, 3 - history.filter((h) => h.date.slice(0, 10) === new Date().toISOString().slice(0, 10)).length)} />
+        </View>
 
-        {/* 5️⃣ Carte PROCHAIN POST */}
-        <View className="px-6 mb-6">
-          <MotiView
-            from={{ opacity: 0, translateY: 20 }}
-            animate={{ opacity: 1, translateY: 0 }}
-            transition={{ delay: 150 }}
-          >
-            <BlurView intensity={20} tint="dark" style={styles.nextPostCard}>
-              <LinearGradient
-                colors={['rgba(123, 51, 247, 0.12)', 'rgba(255, 79, 249, 0.08)']}
-                style={styles.nextPostCardGradient}
-              >
-                <View style={styles.nextPostHeader}>
-                  <Text style={styles.nextPostLabel}>PROCHAIN POST</Text>
-                </View>
-                <View style={styles.nextPostContent}>
-                  <View style={styles.nextPostIconContainer}>
-                    <LinearGradient
-                      colors={['#7B33F7', '#FF4FF9']}
-                      style={styles.nextPostIconGradient}
-                    >
-                      <Ionicons 
-                        name={displayNextPost.type === 'publish' ? 'rocket-outline' : displayNextPost.type === 'record' ? 'videocam-outline' : 'musical-notes-outline'} 
-                        size={22} 
-                        color="white" 
-                      />
+        {/* Bilan du compte TikTok */}
+        <View style={{ marginBottom: 22 }}>
+          <AccountCard profile={profile} onPress={() => navigation.navigate('AccountReport')} />
+        </View>
+
+        {/* Tendance de la semaine */}
+        {trend ? (
+          <MotiView from={{ opacity: 0, translateY: 12 }} animate={{ opacity: 1, translateY: 0 }}>
+            <View style={styles.sectionRow}>
+              <View style={styles.sectionTitleRow}>
+                <Flame size={18} color="#FFB84F" />
+                <Text style={styles.section}>Ta tendance de la semaine</Text>
+              </View>
+              <TouchableOpacity onPress={() => navigation.navigate('Trends')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Text style={styles.seeAll}>Tout voir</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity activeOpacity={0.92} onPress={openTrend}>
+              <LinearGradient colors={['rgba(255,79,249,0.22)', 'rgba(144,19,254,0.16)']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.trendCard}>
+                <View style={styles.trendTop}>
+                  {trendCover ? <Image source={{ uri: trendCover }} style={styles.trendCover} /> : (
+                    <LinearGradient colors={['#7B33F7', PINK]} style={[styles.trendCover, { alignItems: 'center', justifyContent: 'center' }]}>
+                      {trend.kind === 'sound' ? <Music2 size={26} color="#FFF" /> : <Play size={26} color="#FFF" />}
                     </LinearGradient>
+                  )}
+                  <View style={{ flex: 1 }}>
+                    {stage ? (
+                      <View style={[styles.stage, { backgroundColor: `${stage.color}22` }]}>
+                        <stage.Icon size={11} color={stage.color} />
+                        <Text style={[styles.stageText, { color: stage.color }]}>{stage.label}</Text>
+                      </View>
+                    ) : null}
+                    <Text style={styles.trendTitle} numberOfLines={2}>
+                      {trend.kind === 'sound' ? trend.item.title : `@${trend.item.author}`}
+                    </Text>
+                    <Text style={styles.trendSub} numberOfLines={1}>
+                      {trend.kind === 'sound' ? (trend.item.artist || 'Son tendance') : (trend.item.soundTitle || 'Vidéo tendance')}
+                    </Text>
                   </View>
-                  <View style={styles.nextPostTextContainer}>
-                    <Text style={styles.nextPostTitle}>{displayNextPost.title}</Text>
-                    <View style={styles.nextPostMeta}>
-                      <Text style={styles.nextPostDate}>
-                        {new Date(displayNextPost.date + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })}
-                      </Text>
-                      <Text style={styles.nextPostTime}>{displayNextPost.hour}</Text>
-                    </View>
-                  </View>
-                  <Ionicons name="chevron-forward" size={18} color={theme.colors.text.secondary} />
+                </View>
+                <View style={styles.trendCta}>
+                  <Wand2 size={16} color="#FFF" />
+                  <Text style={styles.trendCtaText}>Refaire à ma façon</Text>
+                  <ChevronRight size={16} color="#FFF" />
                 </View>
               </LinearGradient>
-            </BlurView>
+            </TouchableOpacity>
           </MotiView>
+        ) : null}
+
+        {/* Ta semaine */}
+        <View style={styles.sectionRow}>
+          <Text style={styles.section}>Ta semaine</Text>
+          <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setModalVisible(true); }} style={styles.addBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Plus size={15} color="#FFF" strokeWidth={2.6} />
+            <Text style={styles.addBtnText}>Ajouter</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.week}>
+          {weekDays.map((d) => {
+            const ds = toLocalDateString(d);
+            const selected = ds === selectedDate;
+            const isToday = ds === todayStr;
+            const hasTask = allTasks.some((t) => t.date === ds);
+            return (
+              <TouchableOpacity key={ds} style={styles.day} activeOpacity={0.7} onPress={() => { Haptics.selectionAsync(); setSelectedDate(ds); }}>
+                <Text style={[styles.dayLetter, isToday && { color: PINK }]}>{DAY_LETTERS[d.getDay()]}</Text>
+                <View style={[styles.dayCircle, selected && styles.dayCircleOn]}>
+                  {selected ? <LinearGradient colors={[PINK, '#9013FE']} style={StyleSheet.absoluteFill} /> : null}
+                  <Text style={[styles.dayNum, selected && { color: '#FFF' }]}>{d.getDate()}</Text>
+                </View>
+                <View style={[styles.dayDot, { opacity: hasTask ? 1 : 0 }]} />
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
-        {/* 6️⃣ Objectif hebdomadaire */}
-        <View className="px-6 mb-6">
-          <MotiView
-            from={{ opacity: 0, translateY: 20 }}
-            animate={{ opacity: 1, translateY: 0 }}
-            transition={{ delay: 200 }}
-          >
-            <BlurView intensity={20} tint="dark" style={styles.goalCard}>
-              <LinearGradient
-                colors={['rgba(123, 51, 247, 0.1)', 'rgba(255, 79, 249, 0.05)']}
-                style={styles.goalCardGradient}
-              >
-                <Text style={styles.goalTitle}>Objectif hebdomadaire</Text>
-                
-                {/* Barre de progression */}
-                <View style={styles.progressBarContainer}>
-                  <LinearGradient
-                    colors={['#7B33F7', '#FF4FF9']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.progressBarFill}
-                  />
-                </View>
+        {tasks.length > 0 ? (
+          <View style={{ marginBottom: 8 }}>
+            <Text style={styles.sectionSmall}>{selectedDate === todayStr ? 'Aujourd’hui' : 'Ce jour-là'}</Text>
+            <TaskList tasks={tasks} onTaskDeleted={() => { loadTasks(); loadAllTasks(); }} />
+          </View>
+        ) : null}
 
-                {/* Badge 2/3 + Texte */}
-                <View style={styles.goalFooter}>
-                  <Text style={styles.goalText}>
-                    Plus que 1 vidéo(s) à publier
-                  </Text>
-                  <View style={styles.goalBadge}>
-                    <Text style={styles.goalBadgeText}>2/3</Text>
-                  </View>
-                </View>
-              </LinearGradient>
-            </BlurView>
-          </MotiView>
+        {/* Prochain post */}
+        <TouchableOpacity activeOpacity={0.88} onPress={() => (nextPost ? navigation.navigate('Calendar') : setModalVisible(true))} style={styles.card}>
+          <View style={[styles.cardIcon, { backgroundColor: 'rgba(79,195,255,0.15)' }]}>
+            <CalendarDays size={20} color="#4FC3FF" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.cardLabel}>Prochain post</Text>
+            {nextPost ? (
+              <>
+                <Text style={styles.cardTitle} numberOfLines={1}>{nextPost.title}</Text>
+                <Text style={styles.cardSub}>
+                  {new Date(nextPost.date + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' })} · {nextPost.hour}
+                </Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.cardTitle}>Rien de prévu</Text>
+                <Text style={styles.cardSub}>Planifie ton prochain post pour garder le rythme</Text>
+              </>
+            )}
+          </View>
+          <ChevronRight size={18} color="rgba(255,255,255,0.5)" />
+        </TouchableOpacity>
+
+        {/* Objectif de la semaine */}
+        <View style={styles.card}>
+          <View style={[styles.cardIcon, { backgroundColor: 'rgba(255,216,79,0.15)' }]}>
+            <Target size={20} color="#FFD84F" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <View style={styles.goalHead}>
+              <Text style={styles.cardLabel}>Objectif de la semaine</Text>
+              <Text style={styles.goalCount}>{done}/{target}</Text>
+            </View>
+            <Text style={styles.cardTitle}>
+              {goalReached ? 'Objectif atteint, bravo 🎉' : `Analyse ${target} vidéo${target > 1 ? 's' : ''} avant de publier`}
+            </Text>
+            <View style={styles.goalBar}>
+              <LinearGradient colors={['#9013FE', PINK]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[styles.goalFill, { width: `${Math.max(4, (done / target) * 100)}%` }]} />
+            </View>
+          </View>
         </View>
 
-        {/* Historique des vidéos - Placeholder */}
-        <View className="px-6 mb-6">
-          <MotiView
-            from={{ opacity: 0, translateY: 20 }}
-            animate={{ opacity: 1, translateY: 0 }}
-            transition={{ delay: 250 }}
-          >
-            <BlurView intensity={20} tint="dark" style={styles.historyCard}>
-              <LinearGradient
-                colors={['rgba(123, 51, 247, 0.1)', 'rgba(255, 79, 249, 0.05)']}
-                style={styles.historyCardGradient}
-              >
-                <View style={styles.historyHeader}>
-                  <View style={styles.historyIconContainer}>
-                    <Ionicons name="videocam-outline" size={22} color="#4FC3FF" />
-                  </View>
-                  <Text style={styles.historyTitle}>Historique des vidéos</Text>
-                </View>
-                <View style={styles.historyEmpty}>
-                  <Ionicons name="film-outline" size={40} color={theme.colors.text.tertiary} />
-                  <Text style={styles.historyEmptyText}>Aucune vidéo publiée</Text>
-                  <Text style={styles.historyEmptySubtext}>Tes vidéos analysées apparaîtront ici</Text>
-                </View>
-              </LinearGradient>
-            </BlurView>
-          </MotiView>
-        </View>
+        {/* Dernières analyses */}
+        <Text style={[styles.section, { marginTop: 18, marginBottom: 12 }]}>Tes dernières analyses</Text>
+        {history.length === 0 ? (
+          <TouchableOpacity activeOpacity={0.88} onPress={handleAnalyze} style={styles.empty}>
+            <Ionicons name="film-outline" size={34} color="rgba(255,255,255,0.4)" />
+            <Text style={styles.emptyTitle}>Ta première analyse t’attend</Text>
+            <Text style={styles.emptyText}>Choisis une vidéo : l’IA te donne sa note et quoi améliorer.</Text>
+          </TouchableOpacity>
+        ) : (
+          history.slice(0, 3).map((h) => (
+            <TouchableOpacity
+              key={h.id}
+              activeOpacity={h.result ? 0.85 : 1}
+              disabled={!h.result}
+              onPress={() => navigation.navigate('AnalysisResult', { videoUri: h.videoUri, result: h.result })}
+              style={styles.historyRow}
+            >
+              <View style={[styles.scoreBadge, { borderColor: scoreColor(h.score) }]}>
+                <Text style={[styles.scoreText, { color: scoreColor(h.score) }]}>{h.score}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.historyTitle} numberOfLines={1}>{h.title}</Text>
+                <Text style={styles.historyDate}>{relativeDay(h.date)}</Text>
+              </View>
+              {h.result ? <ChevronRight size={18} color="rgba(255,255,255,0.5)" /> : null}
+            </TouchableOpacity>
+          ))
+        )}
       </ScrollView>
 
-      {/* Modal Ajouter Tâche */}
-      <AddTaskModal
-        visible={modalVisible}
-        onClose={() => setModalVisible(false)}
-        onTaskAdded={handleTaskAdded}
-        defaultDate={selectedDate}
-      />
-    </ScreenBackground>
+      <AddTaskModal visible={modalVisible} onClose={() => setModalVisible(false)} onTaskAdded={handleTaskAdded} defaultDate={selectedDate} />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  welcomeTitle: {
-    fontSize: 24,
-    fontWeight: '900',
-    color: theme.colors.text.primary,
-    marginBottom: 2,
-  },
-  welcomeSubtitle: {
-    fontSize: 13,
-    color: theme.colors.text.secondary,
-    opacity: 0.7,
-  },
-  calendarHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-  },
-  calendarRow: {
-    flex: 1,
-  },
-  calendarIconButton: {
-    borderRadius: 16,
-    overflow: 'hidden',
-    marginTop: 4,
-  },
-  calendarIconButtonBlur: {
-    borderRadius: 16,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(179, 113, 255, 0.3)',
-  },
-  calendarIconButtonGradient: {
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 16,
-  },
-  dayNamesRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  dayNameContainer: {
-    width: DAY_WIDTH,
-    alignItems: 'center',
-  },
-  dayNameText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: theme.colors.text.secondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  datesRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  dateContainer: {
-    width: DAY_WIDTH,
-    alignItems: 'center',
-  },
-  dateCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  dateCircleSelected: {
-    backgroundColor: '#7B33F7',
-    borderColor: '#7B33F7',
-    shadowColor: '#7B33F7',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  dateText: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: theme.colors.text.primary,
-  },
-  dateTextSelected: {
-    color: 'white',
-  },
-  taskDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-    backgroundColor: '#B371FF',
-  },
-  taskDotSelected: {
-    backgroundColor: 'white',
-  },
-  // Carte premium Analyse IA - Style contour néon
-  analyzeCapsuleContainer: {
-    marginTop: 14,
-  },
-  analyzeCapsule: {
-    borderRadius: 30,
-    overflow: 'hidden',
-    backgroundColor: '#1B0730',
-    borderWidth: 2,
-    borderColor: 'rgba(255, 79, 249, 0.8)',
-    shadowColor: '#FF4FF9',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.45,
-    shadowRadius: 22,
-    elevation: 16,
-  },
-  analyzeCapsuleContent: {
-    paddingVertical: 32,
-    paddingHorizontal: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-    // Ombre interne subtile pour effet 3D
-    backgroundColor: 'rgba(0, 0, 0, 0.15)',
-  },
-  analyzeBadge: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
-    backgroundColor: 'rgba(255, 79, 249, 0.25)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 79, 249, 0.5)',
-    shadowColor: '#FF4FF9',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 4,
-  },
-  analyzeBadgeText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: 1,
-  },
-  analyzeIconContainer: {
-    marginBottom: 16,
-    // Glow subtil autour de l'icône
-    shadowColor: '#FF4FF9',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  analyzeCapsuleTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    textAlign: 'center',
-    marginTop: 8,
-    letterSpacing: 0.2,
-    lineHeight: 28,
-    paddingHorizontal: 8,
-  },
-  analyzeCapsuleSubtitle: {
-    fontSize: 13,
-    color: '#EAEAEA',
-    opacity: 0.85,
-    textAlign: 'center',
-    marginTop: 10,
-    lineHeight: 20,
-    paddingHorizontal: 12,
-  },
-  addTaskButton: {
-    borderRadius: 18,
-    overflow: 'hidden',
-  },
-  addTaskButtonBlur: {
-    borderRadius: 18,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(179, 113, 255, 0.25)',
-  },
-  addTaskButtonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 18,
-  },
-  addTaskText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: theme.colors.text.primary,
-  },
-  tasksSectionTitle: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: theme.colors.text.primary,
-    marginBottom: 14,
-    letterSpacing: 0.2,
-  },
-  nextPostCard: {
-    borderRadius: 22,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(179, 113, 255, 0.3)',
-  },
-  nextPostCardGradient: {
-    padding: 18,
-  },
-  nextPostHeader: {
-    marginBottom: 12,
-  },
-  nextPostLabel: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: theme.colors.text.secondary,
-    textTransform: 'uppercase',
-    letterSpacing: 1.2,
-    opacity: 0.8,
-  },
-  nextPostContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  nextPostIconContainer: {
-    marginRight: 14,
-  },
-  nextPostIconGradient: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#7B33F7',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.4,
-    shadowRadius: 10,
-    elevation: 6,
-  },
-  nextPostTextContainer: {
-    flex: 1,
-  },
-  nextPostTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: theme.colors.text.primary,
-    marginBottom: 6,
-    letterSpacing: 0.2,
-  },
-  nextPostMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  nextPostDate: {
-    fontSize: 13,
-    color: theme.colors.text.secondary,
-    fontWeight: '500',
-  },
-  nextPostTime: {
-    fontSize: 13,
-    color: theme.colors.text.secondary,
-    fontWeight: '500',
-  },
-  goalCard: {
-    borderRadius: 22,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(179, 113, 255, 0.3)',
-  },
-  goalCardGradient: {
-    padding: 20,
-  },
-  goalTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: theme.colors.text.primary,
-    marginBottom: 16,
-    letterSpacing: 0.2,
-  },
-  progressBarContainer: {
-    height: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 4,
-    overflow: 'hidden',
-    marginBottom: 12,
-  },
-  progressBarFill: {
-    width: '66.66%',
-    height: '100%',
-    borderRadius: 4,
-  },
-  goalFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  goalText: {
-    fontSize: 14,
-    color: theme.colors.text.secondary,
-    fontWeight: '500',
-  },
-  goalBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: 'rgba(123, 51, 247, 0.25)',
-    borderWidth: 1,
-    borderColor: 'rgba(123, 51, 247, 0.5)',
-  },
-  goalBadgeText: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#B371FF',
-  },
-  historyCard: {
-    borderRadius: 22,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(179, 113, 255, 0.3)',
-  },
-  historyCardGradient: {
-    padding: 20,
-  },
-  historyHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 18,
-  },
-  historyIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(79, 195, 255, 0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  historyTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: theme.colors.text.primary,
-    letterSpacing: 0.2,
-  },
-  historyEmpty: {
-    alignItems: 'center',
-    paddingVertical: 28,
-  },
-  historyEmptyText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: theme.colors.text.secondary,
-    marginTop: 14,
-    marginBottom: 6,
-  },
-  historyEmptySubtext: {
-    fontSize: 13,
-    color: theme.colors.text.tertiary,
-  },
+  root: { flex: 1, backgroundColor: '#0A0214' },
+  scroll: { paddingHorizontal: 22, paddingBottom: 130 },
+
+  header: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
+  hello: { color: '#FFF', fontSize: 28, fontWeight: '900', letterSpacing: -0.3 },
+  date: { color: 'rgba(234,226,247,0.65)', fontSize: 14, marginTop: 4 },
+  avatar: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { color: '#FFF', fontSize: 19, fontWeight: '900' },
+
+  week: { flexDirection: 'row', justifyContent: 'space-between', padding: 10, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: CARD_BORDER, marginBottom: 22 },
+  day: { alignItems: 'center', gap: 6, flex: 1 },
+  dayLetter: { color: 'rgba(234,226,247,0.55)', fontSize: 12, fontWeight: '700' },
+  dayCircle: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  dayCircleOn: {},
+  dayNum: { color: 'rgba(255,255,255,0.85)', fontSize: 15, fontWeight: '800' },
+  dayDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: PINK },
+
+  sectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  section: { color: '#FFF', fontSize: 19, fontWeight: '800' },
+  sectionSmall: { color: 'rgba(234,226,247,0.65)', fontSize: 13, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 10 },
+  addBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.08)' },
+  addBtnText: { color: '#FFF', fontSize: 13, fontWeight: '800' },
+  seeAll: { color: PINK, fontSize: 14, fontWeight: '800' },
+
+  trendCard: { borderRadius: 24, padding: 16, borderWidth: 1.4, borderColor: 'rgba(255,79,249,0.45)', marginBottom: 14 },
+  trendTop: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  trendCover: { width: 72, height: 72, borderRadius: 18, backgroundColor: '#2A0F45' },
+  stage: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, marginBottom: 6 },
+  stageText: { fontSize: 11, fontWeight: '800' },
+  trendTitle: { color: '#FFF', fontSize: 17, fontWeight: '800', lineHeight: 22 },
+  trendSub: { color: 'rgba(234,226,247,0.7)', fontSize: 13, marginTop: 2 },
+  trendCta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 14, paddingVertical: 12, borderRadius: 999, backgroundColor: 'rgba(10,2,20,0.45)' },
+  trendCtaText: { color: '#FFF', fontSize: 15, fontWeight: '800' },
+
+  actions: { flexDirection: 'row', gap: 12, marginBottom: 14 },
+  actionMain: { borderRadius: 22, padding: 16, minHeight: 112, justifyContent: 'flex-end', gap: 4 },
+  actionMainTitle: { color: '#FFF', fontSize: 17, fontWeight: '900', marginTop: 10 },
+  actionMainSub: { color: 'rgba(255,255,255,0.85)', fontSize: 12, fontWeight: '600' },
+  actionSecondary: { borderRadius: 22, padding: 16, minHeight: 112, justifyContent: 'flex-end', gap: 4, backgroundColor: CARD_BG, borderWidth: 1, borderColor: CARD_BORDER },
+  actionSecondaryTitle: { color: '#FFF', fontSize: 17, fontWeight: '900', marginTop: 10 },
+  actionSecondarySub: { color: 'rgba(234,226,247,0.6)', fontSize: 12, fontWeight: '600' },
+
+  card: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, borderRadius: 22, backgroundColor: CARD_BG, borderWidth: 1, borderColor: CARD_BORDER, marginBottom: 12 },
+  cardIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  cardLabel: { color: 'rgba(234,226,247,0.6)', fontSize: 12, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6 },
+  cardTitle: { color: '#FFF', fontSize: 16, fontWeight: '800', marginTop: 3 },
+  cardSub: { color: 'rgba(234,226,247,0.65)', fontSize: 13, marginTop: 2 },
+  goalHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  goalCount: { color: '#FFD84F', fontSize: 14, fontWeight: '900' },
+  goalBar: { height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.1)', marginTop: 10, overflow: 'hidden' },
+  goalFill: { height: '100%', borderRadius: 4 },
+
+  empty: { alignItems: 'center', padding: 22, borderRadius: 22, borderWidth: 1, borderStyle: 'dashed', borderColor: 'rgba(179,113,255,0.4)', gap: 6 },
+  emptyTitle: { color: '#FFF', fontSize: 16, fontWeight: '800', marginTop: 6 },
+  emptyText: { color: 'rgba(234,226,247,0.6)', fontSize: 13, textAlign: 'center', lineHeight: 18 },
+  historyRow: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14, borderRadius: 20, backgroundColor: CARD_BG, borderWidth: 1, borderColor: CARD_BORDER, marginBottom: 10 },
+  scoreBadge: { width: 46, height: 46, borderRadius: 23, borderWidth: 3, alignItems: 'center', justifyContent: 'center' },
+  scoreText: { fontSize: 16, fontWeight: '900' },
+  historyTitle: { color: '#FFF', fontSize: 15, fontWeight: '700' },
+  historyDate: { color: 'rgba(234,226,247,0.55)', fontSize: 12, marginTop: 2 },
 });

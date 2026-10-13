@@ -1,111 +1,68 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions, TouchableOpacity, ScrollView, Alert, Switch } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Linking } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
+import { MotiView } from 'moti';
 import { Ionicons } from '@expo/vector-icons';
-import { signOut } from 'firebase/auth';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Constants from 'expo-constants';
 import { auth } from '../../firebase';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
-import { theme } from '../theme';
-import { logout, deleteAccount } from '../services/authService';
+import { Crown, ChevronRight, PenLine, Sparkles } from 'lucide-react-native';
+import { deleteAccount } from '../services/authService';
 import { useRevenueCat } from '../context/RevenueCatContext';
-import { Linking } from 'react-native';
-import Purchases from 'react-native-purchases';
 import { useAuth } from '../hooks/useAuth';
-import { ScreenBackground } from '../components/ui/ScreenBackground';
-import { GlassCard } from '../components/ui/GlassCard';
-import { NeonButton } from '../components/ui/NeonButton';
+import { useSession } from '../context/SessionContext';
+import { OnboardingBackground } from '../components/onboarding/OnboardingUI';
+import {
+  useCreatorProfile, firstName, profileToAnswers,
+  LEVEL_LABELS, GOAL_LABELS, BLOCKER_LABELS, FREQUENCY_LABELS, nichesLabel,
+} from '../services/creatorProfile';
+import { useAnalysisHistory, historyStats, clearAnalysisHistory } from '../services/analysisHistory';
+import { clearAccountAudit } from '../services/accountAudit';
 
-const { width, height } = Dimensions.get('window');
-const FIRST_LAUNCH_KEY = '@viraly_first_launch';
+const PINK = '#FF4FF9';
+const CARD_BG = '#1B0730';
+const CARD_BORDER = 'rgba(179, 113, 255, 0.3)';
+const SUPPORT_URL = 'https://viraly-production-b0cd.up.railway.app/support';
+const PRIVACY_URL = 'https://viraly-production-b0cd.up.railway.app/confidentialite';
+const TERMS_URL = 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
 
 interface ProfileScreenProps {
   navigation: any;
 }
 
+const Row = ({ icon, color, label, value, onPress, danger }: {
+  icon: keyof typeof Ionicons.glyphMap; color: string; label: string; value?: string; onPress?: () => void; danger?: boolean;
+}) => (
+  <TouchableOpacity activeOpacity={onPress ? 0.7 : 1} disabled={!onPress} onPress={onPress} style={styles.row}>
+    <View style={[styles.rowIcon, { backgroundColor: `${color}1F` }]}><Ionicons name={icon} size={18} color={color} /></View>
+    <Text style={[styles.rowLabel, danger && { color: '#FF6B8A' }]}>{label}</Text>
+    {value ? <Text style={styles.rowValue}>{value}</Text> : null}
+    {onPress ? <ChevronRight size={16} color="rgba(255,255,255,0.35)" /> : null}
+  </TouchableOpacity>
+);
+
 export default function ProfileScreen({ navigation }: ProfileScreenProps) {
-  const [isLoading, setIsLoading] = useState(false);
-  const [notifications, setNotifications] = useState(true);
-  const [darkMode, setDarkMode] = useState(true);
-  const { user, setUser } = useAuth();
-  const { isPremium } = useRevenueCat();
+  const insets = useSafeAreaInsets();
+  const { user } = useAuth();
+  const { signOut } = useSession();
+  const { isPremium, restorePurchases } = useRevenueCat();
   const [isDeleting, setIsDeleting] = useState(false);
-  
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(50)).current;
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, []);
-
-  const handleResetProfile = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    Alert.alert(
-      "Réinitialisation Système",
-      "Tu vas effacer ton profil et recommencer l'aventure à zéro. Confirmes-tu ?",
-      [
-        { text: "Annuler", style: "cancel" },
-        { 
-          text: "CONFIRMER LE RESET", 
-          style: "destructive",
-          onPress: async () => {
-            try {
-              // 1. Déconnecter l'utilisateur Firebase (si connecté)
-              if (user && !user.isGuest) {
-                try {
-                  await signOut(auth);
-                } catch (error) {
-                  console.warn('Erreur lors de la déconnexion Firebase:', error);
-                }
-              }
-
-              // 2. Réinitialiser l'utilisateur dans le contexte (supprime guest aussi)
-              setUser(null);
-
-              // 3. Effacer les données AsyncStorage
-              await AsyncStorage.removeItem(FIRST_LAUNCH_KEY);
-
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              
-              // 4. Redémarrer l'app sur la première page (Splash)
-              navigation.reset({
-                index: 0,
-                routes: [{ name: 'Splash' }],
-              });
-            } catch (e) {
-              console.error('Erreur lors du reset:', e);
-              Alert.alert("Erreur", "Impossible de réinitialiser.");
-            }
-          }
-        }
-      ]
-    );
-  };
+  const [restoring, setRestoring] = useState(false);
+  const { profile } = useCreatorProfile();
+  const stats = historyStats(useAnalysisHistory());
+  const name = firstName(profile);
+  const version = Constants.expoConfig?.version ?? '';
 
   const runDeleteAccount = async (password?: string) => {
     setIsDeleting(true);
     try {
       await deleteAccount({ password });
-      try {
-        await Purchases.logOut();
-      } catch {}
-      setUser(null);
-      await AsyncStorage.removeItem(FIRST_LAUNCH_KEY);
+      // Compte supprimé : on termine la session proprement (RevenueCat + données du téléphone).
+      // L'app revient d'elle-même à l'écran d'accueil.
+      await signOut().catch(() => {});
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert('Compte supprimé', 'Ton compte et tes données ont été supprimés définitivement.');
-      navigation.reset({ index: 0, routes: [{ name: 'Splash' }] });
     } catch (error: any) {
       if (error?.code !== 'auth/cancelled') {
         Alert.alert('Suppression impossible', error?.message || 'Réessaie plus tard.');
@@ -157,31 +114,38 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
     navigation.navigate('Paywall');
   };
 
+  const handleRestore = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setRestoring(true);
+    try {
+      const restored = await restorePurchases();
+      if (restored) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Alert.alert('Premium retrouvé ✨', 'Ton abonnement est actif sur ce compte.');
+      } else {
+        Alert.alert('Aucun abonnement trouvé', "Aucun abonnement actif n'est lié à ton identifiant Apple.");
+      }
+    } catch {
+      Alert.alert('Oups', 'La restauration a échoué. Vérifie ta connexion et réessaie.');
+    } finally {
+      setRestoring(false);
+    }
+  };
+
   const handleLogout = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Alert.alert(
       "Déconnexion",
-      "Tu veux te déconnecter ?",
+      "Tu veux te déconnecter ? Tu retrouveras ton profil et ton abonnement en te reconnectant.",
       [
         { text: "Annuler", style: "cancel" },
-        { 
-          text: "Déconnexion", 
+        {
+          text: "Déconnexion",
           style: "destructive",
           onPress: async () => {
             try {
-              // Déconnecter Firebase (si connecté)
-              if (user && !user.isGuest) {
-                await signOut(auth);
-              }
-              
-              // Réinitialiser l'utilisateur
-              setUser(null);
-
-              // Rediriger vers Splash
-              navigation.reset({
-                index: 0,
-                routes: [{ name: 'Splash' }],
-              });
+              // RevenueCat, Firebase, puis données du téléphone : l'app revient d'elle-même au début
+              await signOut();
             } catch (error) {
               console.error('Erreur lors de la déconnexion:', error);
               Alert.alert("Erreur", "Impossible de se déconnecter.");
@@ -192,420 +156,165 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
     );
   };
 
+  const lastLabel = stats.daysSinceLast == null ? '—' : stats.daysSinceLast === 0 ? 'Auj.' : `${stats.daysSinceLast} j`;
+  const meta = [profile?.level ? LEVEL_LABELS[profile.level] : null, nichesLabel(profile?.niches)].filter(Boolean).join(' · ');
+
   return (
-    <ScreenBackground>
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        <Animated.View
-          style={[
-            styles.content,
-            {
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }]
-            }
-          ]}
-        >
-          {/* Header */}
-          <View style={styles.header}>
-            <Text style={styles.title}>Profil</Text>
-            <Text style={styles.subtitle}>Gère ton compte et tes préférences</Text>
-          </View>
+    <View style={styles.root}>
+      <OnboardingBackground />
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 16 }]} showsVerticalScrollIndicator={false}>
+        <Text style={styles.title}>Profil</Text>
 
-          {/* Profile Card */}
-          <BlurView intensity={20} tint="dark" style={styles.profileCard}>
-            <LinearGradient
-              colors={theme.colors.gradient.primary}
-              style={styles.avatar}
-            >
-              <Ionicons name="person" size={32} color="white" />
-            </LinearGradient>
-            
-            <Text style={styles.profileName}>Créateur</Text>
-            <Text style={styles.profileType}>Débutant·e Lifestyle</Text>
-            <Text style={styles.profileGoal}>Objectif : Booster l'engagement</Text>
-          </BlurView>
-
-          {/* Stats */}
-          <View style={styles.statsContainer}>
-            <BlurView intensity={15} tint="dark" style={styles.statCard}>
-              <Ionicons name="analytics" size={24} color={theme.colors.primary} />
-              <Text style={styles.statValue}>12</Text>
-              <Text style={styles.statLabel}>Vidéos analysées</Text>
-            </BlurView>
-
-            <BlurView intensity={15} tint="dark" style={styles.statCard}>
-              <Ionicons name="trending-up" size={24} color={theme.colors.secondary} />
-              <Text style={styles.statValue}>8.5</Text>
-              <Text style={styles.statLabel}>Score moyen</Text>
-            </BlurView>
-
-            <BlurView intensity={15} tint="dark" style={styles.statCard}>
-              <Ionicons name="time" size={24} color={theme.colors.accent} />
-              <Text style={styles.statValue}>7j</Text>
-              <Text style={styles.statLabel}>Dernière analyse</Text>
-            </BlurView>
-          </View>
-
-          {/* Subscription Status */}
-          <BlurView intensity={15} tint="dark" style={styles.subscriptionCard}>
-            <View style={styles.subscriptionHeader}>
-              <Ionicons name="diamond" size={24} color={theme.colors.warning} />
-              <Text style={styles.subscriptionTitle}>Abonnement</Text>
-            </View>
-            <Text style={styles.subscriptionStatus}>{isPremium ? 'Viraly Premium ✨' : 'Version Gratuite'}</Text>
-            <Text style={styles.subscriptionDescription}>
-              {isPremium
-                ? 'Analyses illimitées et résultats complets débloqués.'
-                : 'Passe à Viraly Premium pour débloquer toutes les fonctionnalités'}
-            </Text>
-            <TouchableOpacity
-              style={styles.upgradeButton}
-              onPress={isPremium ? () => Linking.openURL('https://apps.apple.com/account/subscriptions') : handleUpgrade}
-              activeOpacity={0.8}
-            >
-              <LinearGradient
-                colors={theme.colors.gradient.primary}
-                style={styles.upgradeButtonGradient}
-              >
-                <Text style={styles.upgradeButtonText}>{isPremium ? 'Gérer mon abonnement' : 'Passer à Premium'}</Text>
-                <Ionicons name="arrow-forward" size={16} color="white" />
+        {/* Identité */}
+        <MotiView from={{ opacity: 0, translateY: 10 }} animate={{ opacity: 1, translateY: 0 }}>
+          <LinearGradient colors={['rgba(255,79,249,0.18)', 'rgba(144,19,254,0.14)']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.identity}>
+            <View style={styles.identityTop}>
+              <LinearGradient colors={[PINK, '#9013FE']} style={styles.avatar}>
+                <Text style={styles.avatarText}>{(name || 'V').slice(0, 1).toUpperCase()}</Text>
               </LinearGradient>
-            </TouchableOpacity>
-          </BlurView>
-
-          {/* Application Settings */}
-          <View style={styles.settingsContainer}>
-            <Text style={styles.settingsTitle}>Application</Text>
-            <GlassCard className="px-4 py-2">
-              <View style={styles.settingRow}>
-                <View style={styles.settingLeft}>
-                  <View style={styles.settingIconContainer}>
-                    <Ionicons name="notifications-outline" size={20} color={theme.colors.primary} />
-                  </View>
-                  <Text style={styles.settingText}>Notifications</Text>
-                </View>
-                <Switch
-                  value={notifications}
-                  onValueChange={setNotifications}
-                  trackColor={{ false: '#1E1B3A', true: theme.colors.primary }}
-                  thumbColor={notifications ? '#FFFFFF' : '#71717A'}
-                />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.name}>{name || 'Créateur'}</Text>
+                {meta ? <Text style={styles.meta}>{meta}</Text> : null}
+                {user?.email ? <Text style={styles.email} numberOfLines={1}>{user.email}</Text> : null}
               </View>
-              <View style={styles.settingRow}>
-                <View style={styles.settingLeft}>
-                  <View style={styles.settingIconContainer}>
-                    <Ionicons name="moon-outline" size={20} color={theme.colors.secondary} />
-                  </View>
-                  <Text style={styles.settingText}>Mode Sombre</Text>
-                </View>
-                <Switch
-                  value={darkMode}
-                  onValueChange={setDarkMode}
-                  trackColor={{ false: '#1E1B3A', true: theme.colors.secondary }}
-                  thumbColor={darkMode ? '#FFFFFF' : '#71717A'}
-                />
+            </View>
+            {profile?.goal || profile?.blocker ? (
+              <View style={styles.tags}>
+                {profile?.goal ? <View style={styles.tag}><Text style={styles.tagText}>🎯 {GOAL_LABELS[profile.goal]}</Text></View> : null}
+                {profile?.frequency ? <View style={styles.tag}><Text style={styles.tagText}>📅 {FREQUENCY_LABELS[profile.frequency]}</Text></View> : null}
               </View>
-            </GlassCard>
-          </View>
-
-          {/* Support Settings */}
-          <View style={styles.settingsContainer}>
-            <Text style={styles.settingsTitle}>Support</Text>
-            <GlassCard className="px-4 py-2">
-              <TouchableOpacity style={styles.settingItem} onPress={() => Linking.openURL('https://viraly-production-b0cd.up.railway.app/support')}>
-                <View style={styles.settingLeft}>
-                  <View style={styles.settingIconContainer}>
-                    <Ionicons name="help-circle-outline" size={20} color={theme.colors.accent} />
-                  </View>
-                  <Text style={styles.settingText}>Centre d'aide</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={16} color={theme.colors.text.tertiary} />
+            ) : null}
+            <View style={styles.identityActions}>
+              <TouchableOpacity activeOpacity={0.85} onPress={() => navigation.navigate('Questionnaire')} style={styles.identityBtn}>
+                <PenLine size={15} color="#FFF" />
+                <Text style={styles.identityBtnText}>Modifier mon profil</Text>
               </TouchableOpacity>
-
-              <TouchableOpacity style={styles.settingItem} onPress={() => Linking.openURL('https://viraly-production-b0cd.up.railway.app/confidentialite')}>
-                <View style={styles.settingLeft}>
-                  <View style={styles.settingIconContainer}>
-                    <Ionicons name="shield-outline" size={20} color={theme.colors.warning} />
-                  </View>
-                  <Text style={styles.settingText}>Confidentialité</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={16} color={theme.colors.text.tertiary} />
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.settingItem}>
-                <View style={styles.settingLeft}>
-                  <View style={styles.settingIconContainer}>
-                    <Ionicons name="phone-portrait-outline" size={20} color={theme.colors.text.secondary} />
-                  </View>
-                  <Text style={styles.settingText}>Version App v1.0.2</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={16} color={theme.colors.text.tertiary} />
-              </TouchableOpacity>
-            </GlassCard>
-          </View>
-
-          {/* Danger Zone */}
-          <View style={styles.settingsContainer}>
-            <Text style={styles.dangerTitle}>Zone Critique</Text>
-            <GlassCard variant="highlight" className="p-6">
-              <Text style={styles.dangerSectionTitle}>Réinitialisation</Text>
-              <Text style={styles.dangerDescription}>
-                Si tu souhaites refaire le questionnaire d'onboarding ou recommencer à zéro, utilise cette option.
-              </Text>
-              
-              <NeonButton
-                title="RESET PROFIL & INTRO"
-                onPress={handleResetProfile}
-                fullWidth
-              />
-
-              <View style={{ height: 16 }} />
-
-              <TouchableOpacity 
-                style={styles.logoutButton}
-                onPress={handleLogout}
-              >
-                <Ionicons name="log-out-outline" size={16} color={theme.colors.error} style={{ marginRight: 8 }} />
-                <Text style={styles.logoutText}>Se déconnecter</Text>
-              </TouchableOpacity>
-
-              {user && !user.isGuest && (
-                <TouchableOpacity
-                  style={[styles.logoutButton, { marginTop: 12, opacity: isDeleting ? 0.5 : 1 }]}
-                  onPress={handleDeleteAccount}
-                  disabled={isDeleting}
-                >
-                  <Ionicons name="trash-outline" size={16} color={theme.colors.error} style={{ marginRight: 8 }} />
-                  <Text style={styles.logoutText}>{isDeleting ? 'Suppression…' : 'Supprimer mon compte'}</Text>
+              {profile?.level ? (
+                <TouchableOpacity activeOpacity={0.85} onPress={() => navigation.navigate('Recommendation', { answers: profileToAnswers(profile) })} style={styles.identityBtn}>
+                  <Sparkles size={15} color="#FFF" />
+                  <Text style={styles.identityBtnText}>Revoir mon plan</Text>
                 </TouchableOpacity>
-              )}
-            </GlassCard>
-          </View>
+              ) : null}
+            </View>
+          </LinearGradient>
+        </MotiView>
 
-          <Text style={styles.footerText}>
-            Viraly AI - Build 2024.11.23
-          </Text>
-        </Animated.View>
+        {/* Vrais chiffres */}
+        <View style={styles.stats}>
+          {[
+            { value: String(stats.count), label: stats.count > 1 ? 'Vidéos analysées' : 'Vidéo analysée' },
+            { value: stats.average == null ? '—' : `${stats.average}`, label: 'Note moyenne' },
+            { value: stats.best == null ? '—' : `${stats.best}`, label: 'Meilleure note' },
+          ].map((s) => (
+            <View key={s.label} style={styles.stat}>
+              <Text style={styles.statValue}>{s.value}</Text>
+              <Text style={styles.statLabel}>{s.label}</Text>
+            </View>
+          ))}
+        </View>
+        {stats.count ? <Text style={styles.statsNote}>Dernière analyse : {lastLabel === 'Auj.' ? 'aujourd’hui' : `il y a ${lastLabel}`}</Text> : null}
+
+        {profile?.blocker ? (
+          <View style={styles.focus}>
+            <Text style={styles.focusLabel}>Ta priorité du moment</Text>
+            <Text style={styles.focusText}>{BLOCKER_LABELS[profile.blocker]}</Text>
+          </View>
+        ) : null}
+
+        {/* Compte TikTok */}
+        <Text style={styles.section}>TikTok</Text>
+        <View style={styles.group}>
+          <Row
+            icon="logo-tiktok"
+            color={PINK}
+            label={profile?.tiktok ? 'Bilan de mon compte' : 'Relier mon compte TikTok'}
+            value={profile?.tiktok ? `@${profile.tiktok}` : undefined}
+            onPress={() => navigation.navigate('AccountReport')}
+          />
+        </View>
+
+        {/* Abonnement */}
+        <TouchableOpacity
+          activeOpacity={0.9}
+          onPress={isPremium ? () => Linking.openURL('https://apps.apple.com/account/subscriptions') : handleUpgrade}
+          style={styles.premium}
+        >
+          <View style={styles.premiumIcon}><Crown size={20} color="#FFD84F" /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.premiumTitle}>{isPremium ? 'Viraly Premium ✨' : 'Version gratuite'}</Text>
+            <Text style={styles.premiumText}>
+              {isPremium ? 'Analyses illimitées et résultats complets.' : 'Passe à Premium : analyses, plans et tendances sans limite.'}
+            </Text>
+          </View>
+          <View style={styles.premiumBtn}><Text style={styles.premiumBtnText}>{isPremium ? 'Gérer' : 'Découvrir'}</Text></View>
+        </TouchableOpacity>
+
+        {!isPremium ? (
+          <View style={[styles.group, { marginTop: 12 }]}>
+            <Row icon="refresh-circle-outline" color="#FFD84F" label={restoring ? 'Restauration…' : 'Restaurer mes achats'} onPress={restoring ? undefined : handleRestore} />
+          </View>
+        ) : null}
+
+        {/* Aide */}
+        <Text style={styles.section}>Aide</Text>
+        <View style={styles.group}>
+          <Row icon="help-circle-outline" color="#4FC3FF" label="Centre d’aide" onPress={() => Linking.openURL(SUPPORT_URL)} />
+          <Row icon="shield-checkmark-outline" color="#42FFB0" label="Confidentialité" onPress={() => Linking.openURL(PRIVACY_URL)} />
+          <Row icon="document-text-outline" color="#B371FF" label="Conditions d’utilisation" onPress={() => Linking.openURL(TERMS_URL)} />
+          <Row icon="phone-portrait-outline" color="#A1A1AA" label="Version" value={version} />
+        </View>
+
+        {/* Compte */}
+        <Text style={styles.section}>Compte</Text>
+        <View style={styles.group}>
+          <Row icon="log-out-outline" color="#FF6B8A" label="Se déconnecter" onPress={handleLogout} danger />
+          <Row icon="trash-outline" color="#FF6B8A" label={isDeleting ? 'Suppression…' : 'Supprimer mon compte'} onPress={isDeleting ? undefined : handleDeleteAccount} danger />
+        </View>
       </ScrollView>
-    </ScreenBackground>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  scrollContent: {
-    flexGrow: 1,
-    paddingBottom: 100,
-  },
-  content: {
-    paddingHorizontal: 24,
-    paddingTop: 60,
-  },
-  header: {
-    marginBottom: 32,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: '900',
-    color: theme.colors.text.primary,
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: theme.colors.text.secondary,
-  },
-  profileCard: {
-    borderRadius: 24,
-    padding: 24,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: theme.colors.border.primary,
-    alignItems: 'center',
-    overflow: 'hidden',
-  },
-  avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  profileName: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: theme.colors.text.primary,
-    marginBottom: 4,
-  },
-  profileType: {
-    fontSize: 16,
-    color: theme.colors.primary,
-    marginBottom: 4,
-  },
-  profileGoal: {
-    fontSize: 14,
-    color: theme.colors.text.secondary,
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    marginBottom: 24,
-    gap: 12,
-  },
-  statCard: {
-    flex: 1,
-    borderRadius: 20,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: theme.colors.border.primary,
-    alignItems: 'center',
-    overflow: 'hidden',
-  },
-  statValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: theme.colors.text.primary,
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: theme.colors.text.secondary,
-    textAlign: 'center',
-  },
-  subscriptionCard: {
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: theme.colors.border.primary,
-    overflow: 'hidden',
-  },
-  subscriptionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  subscriptionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: theme.colors.text.primary,
-    marginLeft: 8,
-  },
-  subscriptionStatus: {
-    fontSize: 16,
-    color: theme.colors.warning,
-    marginBottom: 8,
-  },
-  subscriptionDescription: {
-    fontSize: 14,
-    color: theme.colors.text.secondary,
-    lineHeight: 20,
-    marginBottom: 16,
-  },
-  upgradeButton: {
-    width: '100%',
-    borderRadius: 20,
-    overflow: 'hidden',
-  },
-  upgradeButtonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 20,
-  },
-  upgradeButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginRight: 8,
-  },
-  settingsContainer: {
-    marginBottom: 24,
-  },
-  settingsTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: theme.colors.text.secondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 12,
-    marginLeft: 8,
-  },
-  dangerTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: theme.colors.error,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 12,
-    marginLeft: 8,
-  },
-  settingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  settingItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  settingLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  settingIconContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  settingText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: theme.colors.text.primary,
-  },
-  dangerSectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: theme.colors.text.primary,
-    marginBottom: 8,
-  },
-  dangerDescription: {
-    fontSize: 14,
-    color: theme.colors.text.secondary,
-    lineHeight: 20,
-    marginBottom: 24,
-  },
-  logoutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-  },
-  logoutText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: theme.colors.error,
-  },
-  footerText: {
-    textAlign: 'center',
-    color: 'rgba(255, 255, 255, 0.2)',
-    fontSize: 12,
-    marginTop: 32,
-    marginBottom: 16,
-  },
+  root: { flex: 1, backgroundColor: '#0A0214' },
+  scroll: { paddingHorizontal: 22, paddingBottom: 130 },
+  title: { color: '#FFF', fontSize: 32, fontWeight: '900', marginBottom: 18 },
+
+  identity: { borderRadius: 26, padding: 18, borderWidth: 1.4, borderColor: 'rgba(255,79,249,0.4)' },
+  identityTop: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  avatar: { width: 66, height: 66, borderRadius: 33, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { color: '#FFF', fontSize: 28, fontWeight: '900' },
+  name: { color: '#FFF', fontSize: 24, fontWeight: '900' },
+  meta: { color: 'rgba(234,226,247,0.75)', fontSize: 14, marginTop: 3 },
+  email: { color: 'rgba(234, 226, 247, 0.45)', fontSize: 12, marginTop: 4 },
+  tags: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 },
+  tag: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, backgroundColor: 'rgba(10,2,20,0.45)' },
+  tagText: { color: '#FFF', fontSize: 12, fontWeight: '700' },
+  identityActions: { flexDirection: 'row', gap: 10, marginTop: 16 },
+  identityBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingVertical: 11, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.1)' },
+  identityBtnText: { color: '#FFF', fontSize: 13, fontWeight: '800' },
+
+  stats: { flexDirection: 'row', gap: 10, marginTop: 14 },
+  stat: { flex: 1, alignItems: 'center', paddingVertical: 16, borderRadius: 20, backgroundColor: CARD_BG, borderWidth: 1, borderColor: CARD_BORDER },
+  statValue: { color: '#FFF', fontSize: 24, fontWeight: '900' },
+  statLabel: { color: 'rgba(234,226,247,0.6)', fontSize: 11, fontWeight: '700', marginTop: 4, textAlign: 'center' },
+  statsNote: { color: 'rgba(234,226,247,0.5)', fontSize: 12, textAlign: 'center', marginTop: 8 },
+
+  focus: { marginTop: 14, padding: 16, borderRadius: 20, backgroundColor: 'rgba(255,79,249,0.08)', borderWidth: 1, borderColor: 'rgba(255,79,249,0.35)' },
+  focusLabel: { color: PINK, fontSize: 12, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6 },
+  focusText: { color: '#FFF', fontSize: 16, fontWeight: '800', marginTop: 4 },
+
+  premium: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 14, padding: 16, borderRadius: 22, backgroundColor: CARD_BG, borderWidth: 1, borderColor: 'rgba(255,216,79,0.35)' },
+  premiumIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255,216,79,0.15)', alignItems: 'center', justifyContent: 'center' },
+  premiumTitle: { color: '#FFF', fontSize: 16, fontWeight: '800' },
+  premiumText: { color: 'rgba(234,226,247,0.65)', fontSize: 13, marginTop: 2, lineHeight: 18 },
+  premiumBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, backgroundColor: PINK },
+  premiumBtnText: { color: '#FFF', fontSize: 13, fontWeight: '800' },
+
+  section: { color: 'rgba(234,226,247,0.6)', fontSize: 13, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6, marginTop: 26, marginBottom: 10, marginLeft: 4 },
+  group: { borderRadius: 22, backgroundColor: CARD_BG, borderWidth: 1, borderColor: CARD_BORDER, overflow: 'hidden' },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 13, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(179,113,255,0.18)' },
+  rowIcon: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  rowLabel: { flex: 1, color: '#FFF', fontSize: 15, fontWeight: '600' },
+  rowValue: { color: 'rgba(234,226,247,0.55)', fontSize: 14 },
 });

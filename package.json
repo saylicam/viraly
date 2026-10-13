@@ -18,7 +18,9 @@
     "dev:backend": "cd src/server && npm run dev",
     "dev:frontend": "cross-env EXPO_DEV_SERVER_LISTEN_ADDRESS=0.0.0.0 expo start --host lan",
     "install:all": "npm install && cd src/server && npm install",
-    "doctor": "expo doctor --fix-dependencies"
+    "doctor": "expo doctor --fix-dependencies",
+    "start:dev": "cross-env APP_VARIANT=development EXPO_DEV_SERVER_LISTEN_ADDRESS=0.0.0.0 expo start --dev-client --host lan --scheme viraly-dev",
+    "build:dev": "eas build --profile development --platform ios"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

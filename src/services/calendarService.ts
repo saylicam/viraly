@@ -14,6 +14,8 @@ export interface CalendarTask {
   title: string;
   createdBy: 'ai' | 'user';
   createdAt?: string;
+  notes?: string; // détails (ex. plan de tournage d'une tendance)
+  done?: boolean; // cochée par le créateur (publiée, tournée…)
 }
 
 /**
@@ -56,6 +58,11 @@ const writeGuestTasks = async (tasks: CalendarTask[]): Promise<void> => {
 };
 
 const calendarCollection = (userId: string) => collection(db as any, 'users', userId, 'calendar');
+
+const NICHE_NAMES: Record<string, string> = {
+  comedy: 'Comédie', music: 'Musique', beauty: 'Beauté', education: 'Éducation', gaming: 'Gaming',
+  fitness: 'Fitness', tech: 'Tech', food: 'Cuisine', travel: 'Voyages',
+};
 
 const sortTasks = (tasks: CalendarTask[]) =>
   tasks.sort((a, b) => a.date.localeCompare(b.date) || a.hour.localeCompare(b.hour));
@@ -105,6 +112,22 @@ export const getTasksByDate = async (date: string, userId: string | null = null)
 };
 
 /**
+ * Modifier une tâche (ex. la cocher). Lève une erreur si l'enregistrement échoue.
+ */
+export const updateTask = async (
+  taskId: string,
+  patch: Partial<Omit<CalendarTask, 'id'>>,
+  userId: string | null = null
+): Promise<void> => {
+  if (isGuestId(userId)) {
+    const tasks = await readGuestTasks();
+    await writeGuestTasks(tasks.map((t) => (t.id === taskId ? { ...t, ...patch } : t)));
+    return;
+  }
+  await setDoc(doc(calendarCollection(userId as string), taskId), patch, { merge: true });
+};
+
+/**
  * Supprimer une tâche. Lève une erreur si la suppression échoue.
  */
 export const deleteTask = async (taskId: string, userId: string | null = null): Promise<void> => {
@@ -121,46 +144,81 @@ export const deleteTask = async (taskId: string, userId: string | null = null): 
  * Générer automatiquement des tâches à partir des réponses du questionnaire
  * (4 semaines, uniquement des dates à venir).
  */
+/**
+ * Quand le créateur change de niche : met à jour le titre des publications futures créées par l'IA
+ * (« Publier une vidéo Comédie » → « Publier une vidéo Musique »). Les tâches écrites par l'utilisateur ne bougent pas.
+ */
+export const renameAiPublishTasks = async (niche: string | undefined, userId: string | null = null): Promise<number> => {
+  const label = niche ? NICHE_NAMES[niche] ?? niche : '';
+  const title = label ? `Publier une vidéo ${label}` : 'Publier une vidéo';
+  const today = toLocalDateString();
+  const isAiPublish = (t: CalendarTask) =>
+    t.createdBy === 'ai' && t.type === 'publish' && t.date >= today && t.title.startsWith('Publier une vidéo') && t.title !== title;
+
+  if (isGuestId(userId)) {
+    const tasks = await readGuestTasks();
+    let n = 0;
+    tasks.forEach((t) => { if (isAiPublish(t)) { t.title = title; n++; } });
+    if (n) await writeGuestTasks(tasks);
+    return n;
+  }
+  const tasks = await getTasks(userId);
+  const targets = tasks.filter(isAiPublish);
+  await Promise.all(targets.map((t) => setDoc(doc(calendarCollection(userId as string), t.id), { title }, { merge: true })));
+  return targets.length;
+};
+
 export const generateTasksFromQuestionnaire = async (
   answers: Record<string, string[]>,
   userId: string | null = null
-): Promise<void> => {
-  const frequency = answers.frequency?.[0] || '1x / semaine';
-  const niches = answers.niches || [];
+): Promise<number> => {
+  const frequency = answers.frequency?.[0] || '1week';
+  const niche = answers.niches?.[0];
+  const nicheLabel = niche ? NICHE_NAMES[niche] ?? niche : '';
 
-  let tasksPerWeek = 1;
-  if (frequency.includes('2x') || frequency.includes('2 fois')) tasksPerWeek = 2;
-  else if (frequency.includes('3x') || frequency.includes('3 fois')) tasksPerWeek = 3;
-  else if (frequency.includes('quotidien') || frequency.includes('tous les jours')) tasksPerWeek = 7;
-
-  const daysByFrequency: Record<number, number[]> = {
-    1: [3],                   // Mercredi
-    2: [1, 3],                // Lundi, Mercredi
-    3: [1, 3, 5],             // Lundi, Mercredi, Vendredi
-    7: [0, 1, 2, 3, 4, 5, 6], // Tous les jours
+  // Jours conseillés (0 = dimanche) selon le rythme choisi
+  const perWeek = ({ '1week': 1, '2week': 3, daily: 5, irregular: 2 } as Record<string, number>)[frequency] ?? 1;
+  const daysByCount: Record<number, number[]> = {
+    1: [3],             // mercredi
+    2: [2, 5],          // mardi, vendredi
+    3: [1, 3, 5],       // lundi, mercredi, vendredi
+    5: [1, 2, 3, 4, 5], // du lundi au vendredi
   };
-  const daysOfWeek = daysByFrequency[tasksPerWeek];
-  const bestHours = ['19:00', '18:00', '20:00', '21:00'];
+  const days = daysByCount[perWeek] ?? [3];
+  const hours = ['19:00', '18:30', '20:00'];
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  let created = 0;
 
-  for (let week = 0; week < 4; week++) {
-    for (const dayOfWeek of daysOfWeek) {
+  // Première mission : choisir une tendance (demain)
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+  await saveTask({
+    date: toLocalDateString(tomorrow),
+    hour: '18:00',
+    type: 'idea',
+    title: 'Choisir une tendance de la semaine',
+    createdBy: 'ai',
+    notes: 'Onglet Tendances → « Refaire à ma façon » pour obtenir ton plan de tournage.',
+  }, userId);
+  created++;
+
+  // Créneaux de publication sur 2 semaines
+  for (let week = 0; week < 2; week++) {
+    for (const [i, dayOfWeek] of days.entries()) {
       const taskDate = new Date(today);
       taskDate.setDate(today.getDate() + week * 7 + (dayOfWeek - today.getDay()));
-      if (taskDate < today) continue; // pas de tâches dans le passé
-
-      await saveTask(
-        {
-          date: toLocalDateString(taskDate),
-          hour: bestHours[Math.floor(Math.random() * bestHours.length)],
-          type: 'publish',
-          title: `Publication ${niches[0] || 'contenu'}`,
-          createdBy: 'ai',
-        },
-        userId
-      );
+      if (taskDate <= today) continue; // pas de tâches dans le passé
+      await saveTask({
+        date: toLocalDateString(taskDate),
+        hour: hours[i % hours.length],
+        type: 'publish',
+        title: nicheLabel ? `Publier une vidéo ${nicheLabel}` : 'Publier une vidéo',
+        createdBy: 'ai',
+      }, userId);
+      created++;
     }
   }
+  return created;
 };

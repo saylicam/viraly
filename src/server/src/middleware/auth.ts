@@ -1,16 +1,14 @@
 import type { Request, Response, NextFunction } from 'express';
-import { initializeApp, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { env } from '../env';
+import { firebaseApp } from '../firebase';
+import { consumeFreeAnalysis, FREE_LIMIT_MESSAGE } from '../services/freeQuota';
 
 /**
  * Vérification des jetons Firebase.
- * Pas besoin de compte de service : verifyIdToken n'a besoin que de l'ID du projet
- * (il télécharge les clés publiques de Google pour vérifier la signature).
+ * verifyIdToken n'a besoin que de l'ID du projet (il télécharge les clés publiques
+ * de Google pour vérifier la signature) : voir ../firebase.ts.
  */
-if (getApps().length === 0) {
-  initializeApp({ projectId: env.FIREBASE_PROJECT_ID });
-}
 
 export interface AuthedRequest extends Request {
   uid?: string;
@@ -31,7 +29,7 @@ export const requireAuth = async (req: AuthedRequest, res: Response, next: NextF
   }
 
   try {
-    const decoded = await getAuth().verifyIdToken(token);
+    const decoded = await getAuth(firebaseApp).verifyIdToken(token);
     req.uid = decoded.uid;
     next();
   } catch (error) {
@@ -47,7 +45,10 @@ export const requireAuth = async (req: AuthedRequest, res: Response, next: NextF
 const subscriptionCache = new Map<string, { active: boolean; checkedAt: number }>();
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
-const hasActiveEntitlement = async (uid: string): Promise<boolean> => {
+export const hasActiveEntitlement = async (uid: string): Promise<boolean> => {
+  // Mode test du PC : on simule le statut sans RevenueCat
+  if (env.TEST_PLAN) return env.TEST_PLAN === 'premium';
+
   const cached = subscriptionCache.get(uid);
   if (cached && cached.active && Date.now() - cached.checkedAt < CACHE_TTL_MS) {
     return cached.active;
@@ -81,25 +82,11 @@ const hasActiveEntitlement = async (uid: string): Promise<boolean> => {
   return active;
 };
 
-// Analyses gratuites : nombre par utilisateur et par jour (en mémoire, remis à zéro au redémarrage)
-const freeUsage = new Map<string, { day: string; count: number }>();
-
-const today = () => new Date().toISOString().slice(0, 10);
-
-const consumeFreeAnalysis = (uid: string): boolean => {
-  const day = today();
-  const entry = freeUsage.get(uid);
-  const count = entry && entry.day === day ? entry.count : 0;
-  if (count >= env.FREE_ANALYSES_PER_DAY) return false;
-  freeUsage.set(uid, { day, count: count + 1 });
-  return true;
-};
-
 /**
  * Détermine si l'utilisateur est abonné (req.isPremium).
  * - Abonné : analyse complète, sans limite.
- * - Non abonné : analyse partielle (le détail est réservé à Premium),
- *   limitée à FREE_ANALYSES_PER_DAY par jour pour maîtriser le coût.
+ * - Non abonné : FREE_ANALYSES_TOTAL analyse(s) offerte(s) au total, en version partielle
+ *   (le détail est réservé à Premium), puis écran Premium.
  */
 export const checkSubscription = async (req: AuthedRequest, res: Response, next: NextFunction) => {
   if (env.REQUIRE_SUBSCRIPTION === 'false') {
@@ -120,12 +107,8 @@ export const checkSubscription = async (req: AuthedRequest, res: Response, next:
 
   // Seul l'envoi d'une vidéo consomme une analyse gratuite
   const isAnalysis = req.method === 'POST';
-  if (!req.isPremium && isAnalysis && !consumeFreeAnalysis(req.uid as string)) {
-    return res.status(429).json({
-      success: false,
-      error: 'FREE_LIMIT_REACHED',
-      message: `Tu as utilisé tes ${env.FREE_ANALYSES_PER_DAY} analyses gratuites du jour. Passe à Premium pour analyser sans limite.`,
-    });
+  if (!req.isPremium && isAnalysis && !(await consumeFreeAnalysis(req.uid as string))) {
+    return res.status(429).json({ success: false, error: 'FREE_LIMIT_REACHED', message: FREE_LIMIT_MESSAGE });
   }
 
   next();

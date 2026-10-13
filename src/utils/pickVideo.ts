@@ -24,9 +24,10 @@ export const pickVideo = async (): Promise<PickedVideo | null> => {
       allowsEditing: false,
       quality: 1,
       videoMaxDuration: 60,
-      // Conversion en 720p : contourne un bug d'expo-image-picker (copie de l'original sans
-      // téléchargement iCloud → erreur 3164) et allège la vidéo envoyée au serveur.
-      videoExportPreset: ImagePicker.VideoExportPreset.H264_1280x720,
+      // Conversion en 960x540 : contourne un bug d'expo-image-picker (copie de l'original sans
+      // téléchargement iCloud → erreur 3164) et divise par ~2 le poids envoyé (envoi plus rapide).
+      // L'IA regarde la vidéo en basse définition de toute façon : aucune perte pour l'analyse.
+      videoExportPreset: ImagePicker.VideoExportPreset.H264_960x540,
     });
 
     if (result.canceled || !result.assets?.[0]) return null;

@@ -43,3 +43,12 @@ yarn-error.*
 
 # Vidéos temporaires du serveur
 src/server/uploads/
+
+# échantillons de test tendances
+src/server/trends-sample/
+src/server/data/
+_to_delete/
+
+# Certificats de signature iOS (secrets) — ne jamais envoyer sur GitHub
+credentials.json
+credentials/

@@ -42,14 +42,27 @@ const envSchema = z.object({
   REVENUECAT_ENTITLEMENT_ID: z.string().default('premium'),
   // Mettre "false" uniquement en développement pour tester l'analyse sans abonnement
   REQUIRE_SUBSCRIPTION: z.enum(['true', 'false']).default('true'),
-  // Nombre d'analyses partielles gratuites par jour pour un non-abonné
-  FREE_ANALYSES_PER_DAY: z.coerce.number().int().min(0).default(3),
+  // Analyses offertes à un compte gratuit, AU TOTAL (pas par jour). Résultat partiel, détail réservé à Premium.
+  FREE_ANALYSES_TOTAL: z.coerce.number().int().min(0).default(1),
+  // Serveur du PC uniquement : simule un compte « free » ou « premium » sans interroger RevenueCat.
+  // Ne jamais le mettre sur Railway.
+  TEST_PLAN: z.enum(['free', 'premium']).optional(),
 
   // Google Gemini API (supports both GEMINI_API_KEY and EXPO_PUBLIC_GEMINI_API_KEY)
   GEMINI_API_KEY: z.string().optional(),
   EXPO_PUBLIC_GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().default('gemini-3.5-flash-lite'),
   
+  // Firebase Admin : JSON du compte de service (Firebase > Paramètres du projet > Comptes de service).
+  // Nécessaire pour enregistrer les tendances et envoyer les notifications.
+  FIREBASE_SERVICE_ACCOUNT: z.string().optional(),
+
+  // Tendances TikTok (fournisseur de données SociaVault) — collecte une fois par semaine
+  SOCIAVAULT_API_KEY: z.string().optional(),
+  TRENDS_INTERVAL_DAYS: z.coerce.number().min(1).default(7),
+  // Jeton secret pour déclencher une collecte à la main (POST /api/trends/refresh)
+  ADMIN_TOKEN: z.string().optional(),
+
   // CORS
   CORS_ORIGIN: z.string().default('*'),
   
@@ -73,7 +86,7 @@ const parseEnv = () => {
       throw new Error('GEMINI_API_KEY or EXPO_PUBLIC_GEMINI_API_KEY is required');
     }
     
-    if (parsed.REQUIRE_SUBSCRIPTION === 'true' && !parsed.REVENUECAT_SECRET_API_KEY) {
+    if (parsed.REQUIRE_SUBSCRIPTION === 'true' && !parsed.REVENUECAT_SECRET_API_KEY && !parsed.TEST_PLAN) {
       throw new Error('REVENUECAT_SECRET_API_KEY is required when REQUIRE_SUBSCRIPTION=true');
     }
 

@@ -7,15 +7,18 @@ import { NeonButton } from '../components/ui/NeonButton';
 import { VideoPreview } from '../components/analysis/VideoPreview';
 import { AnalyzeInfo } from '../components/analysis/AnalyzeInfo';
 import { pickVideo } from '../utils/pickVideo';
+import { useAnalysisGate } from '../hooks/useAnalysisGate';
 
 const { width } = Dimensions.get('window');
 
 export default function AnalyzeScreen({ navigation }: any) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const gate = useAnalysisGate(navigation);
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
   const [videoInfo, setVideoInfo] = useState<{ name?: string; size?: number } | null>(null);
   const handleSelectVideo = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (!(await gate())) return;
     const video = await pickVideo();
     if (!video) return;
     setSelectedVideo(video.uri);

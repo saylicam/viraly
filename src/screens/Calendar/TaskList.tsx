@@ -1,131 +1,118 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
+import { MotiView } from 'moti';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { theme } from '../../theme';
-import { CalendarTask, deleteTask } from '../../services/calendarService';
+import { CalendarTask, deleteTask, updateTask } from '../../services/calendarService';
 import { useAuth } from '../../hooks/useAuth';
+import { typeMeta } from './taskTypes';
 
 interface TaskListProps {
   tasks: CalendarTask[];
+  /** Appelé après une modification (cochée, supprimée) pour recharger */
   onTaskDeleted: () => void;
 }
 
-const getTypeIcon = (type: string) => {
-  switch (type) {
-    case 'publish':
-      return 'rocket-outline';
-    case 'record':
-      return 'videocam-outline';
-    case 'idea':
-      return 'bulb-outline';
-    default:
-      return 'calendar-outline';
-  }
-};
-
-const getTypeColor = (type: string): string[] => {
-  switch (type) {
-    case 'publish':
-      return ['#8B5CF6', '#EC4899'];
-    case 'record':
-      return ['#3B82F6', '#8B5CF6'];
-    case 'idea':
-      return ['#F59E0B', '#EC4899'];
-    default:
-      return theme.colors.gradient.primary;
-  }
-};
-
-const getTypeLabel = (type: string): string => {
-  switch (type) {
-    case 'publish':
-      return 'Publication';
-    case 'record':
-      return 'Enregistrement';
-    case 'idea':
-      return 'Idée';
-    default:
-      return 'Tâche';
-  }
-};
-
+/**
+ * Agenda d'une journée : l'heure à gauche, la tâche à droite.
+ * Appui sur le rond : cocher / décocher. Appui long : menu (cocher, supprimer).
+ * Appui sur la carte : afficher toutes les notes (ex. plan de tournage).
+ */
 export default function TaskList({ tasks, onTaskDeleted }: TaskListProps) {
   const { user } = useAuth();
+  const uid = user?.uid ?? null;
+  // Coche affichée tout de suite, sans attendre le serveur
+  const [doneOverride, setDoneOverride] = useState<Record<string, boolean>>({});
+  const [expanded, setExpanded] = useState<string | null>(null);
+  useEffect(() => { setDoneOverride({}); }, [tasks]);
 
-  const handleDelete = async (taskId: string) => {
+  const isDone = (t: CalendarTask) => doneOverride[t.id] ?? !!t.done;
+
+  const toggleDone = async (t: CalendarTask) => {
+    const next = !isDone(t);
+    Haptics.notificationAsync(next ? Haptics.NotificationFeedbackType.Success : Haptics.NotificationFeedbackType.Warning);
+    setDoneOverride((o) => ({ ...o, [t.id]: next }));
+    try {
+      await updateTask(t.id, { done: next }, uid);
+      onTaskDeleted();
+    } catch {
+      setDoneOverride((o) => ({ ...o, [t.id]: !next }));
+      Alert.alert('Oups', "La tâche n'a pas pu être mise à jour. Vérifie ta connexion et réessaie.");
+    }
+  };
+
+  const remove = async (t: CalendarTask) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
-      await deleteTask(taskId, user?.uid || null);
+      await deleteTask(t.id, uid);
       onTaskDeleted();
-    } catch (error) {
-      console.error('Erreur suppression tâche:', error);
+    } catch {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert(
-        'Suppression impossible',
-        "La tâche n'a pas pu être supprimée. Vérifie ta connexion internet et réessaie."
-      );
+      Alert.alert('Suppression impossible', "La tâche n'a pas pu être supprimée. Vérifie ta connexion internet et réessaie.");
     }
+  };
+
+  const openMenu = (t: CalendarTask) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Alert.alert(t.title, undefined, [
+      { text: isDone(t) ? 'Marquer à faire' : 'Marquer comme fait ✓', onPress: () => toggleDone(t) },
+      { text: 'Supprimer', style: 'destructive', onPress: () => remove(t) },
+      { text: 'Annuler', style: 'cancel' },
+    ]);
   };
 
   return (
     <View style={styles.container}>
-      {tasks.map((task) => {
-        const typeColors = getTypeColor(task.type);
-        const isAIGenerated = task.createdBy === 'ai';
-
+      {tasks.map((task, i) => {
+        const meta = typeMeta(task.type);
+        const done = isDone(task);
+        const open = expanded === task.id;
         return (
-          <View key={task.id} style={styles.taskCard}>
-            <BlurView intensity={20} tint="dark" style={styles.taskBlur}>
-              <LinearGradient
-                colors={['rgba(139, 92, 246, 0.1)', 'rgba(236, 72, 153, 0.05)']}
-                style={styles.taskGradient}
+          <MotiView
+            key={task.id}
+            from={{ opacity: 0, translateY: 8 }}
+            animate={{ opacity: 1, translateY: 0 }}
+            transition={{ delay: Math.min(i, 6) * 50 }}
+            style={styles.row}
+          >
+            <View style={styles.timeCol}>
+              <Text style={[styles.time, done && styles.faded]}>{task.hour}</Text>
+              {i < tasks.length - 1 ? <View style={styles.rail} /> : null}
+            </View>
+
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() => task.notes && setExpanded(open ? null : task.id)}
+              onLongPress={() => openMenu(task)}
+              delayLongPress={350}
+              style={[styles.card, done && styles.cardDone]}
+            >
+              <View style={[styles.bar, { backgroundColor: meta.color }]} />
+              <View style={{ flex: 1 }}>
+                <View style={styles.cardTop}>
+                  <View style={[styles.chip, { backgroundColor: `${meta.color}22` }]}>
+                    <Ionicons name={meta.icon as any} size={12} color={meta.color} />
+                    <Text style={[styles.chipText, { color: meta.color }]}>{meta.label}</Text>
+                  </View>
+                  {task.createdBy === 'ai' ? (
+                    <View style={styles.ai}><Ionicons name="sparkles" size={10} color="#B371FF" /><Text style={styles.aiText}>Plan IA</Text></View>
+                  ) : null}
+                </View>
+                <Text style={[styles.title, done && styles.titleDone]} numberOfLines={open ? undefined : 2}>{task.title}</Text>
+                {task.notes ? (
+                  <Text style={[styles.notes, done && styles.faded]} numberOfLines={open ? undefined : 2}>{task.notes}</Text>
+                ) : null}
+              </View>
+              <TouchableOpacity
+                onPress={() => toggleDone(task)}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                style={[styles.check, done && { backgroundColor: '#42FFB0', borderColor: '#42FFB0' }]}
+                accessibilityLabel={done ? 'Marquer à faire' : 'Marquer comme fait'}
               >
-                {/* Icône type */}
-                <View style={styles.iconContainer}>
-                  <LinearGradient
-                    colors={typeColors}
-                    style={styles.iconGradient}
-                  >
-                    <Ionicons
-                      name={getTypeIcon(task.type) as any}
-                      size={20}
-                      color="white"
-                    />
-                  </LinearGradient>
-                </View>
-
-                {/* Contenu */}
-                <View style={styles.taskContent}>
-                  <View style={styles.taskHeader}>
-                    <Text style={styles.taskType}>{getTypeLabel(task.type)}</Text>
-                    {isAIGenerated && (
-                      <View style={styles.aiBadge}>
-                        <Ionicons name="sparkles" size={12} color={theme.colors.primary} />
-                        <Text style={styles.aiBadgeText}>IA</Text>
-                      </View>
-                    )}
-                  </View>
-                  <Text style={styles.taskTitle}>{task.title}</Text>
-                  <View style={styles.taskTime}>
-                    <Ionicons name="time-outline" size={14} color={theme.colors.text.secondary} />
-                    <Text style={styles.taskTimeText}>{task.hour}</Text>
-                  </View>
-                </View>
-
-                {/* Bouton supprimer */}
-                <TouchableOpacity
-                  style={styles.deleteButton}
-                  onPress={() => handleDelete(task.id)}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="trash-outline" size={18} color={theme.colors.error} />
-                </TouchableOpacity>
-              </LinearGradient>
-            </BlurView>
-          </View>
+                {done ? <Ionicons name="checkmark" size={16} color="#03251A" /> : null}
+              </TouchableOpacity>
+            </TouchableOpacity>
+          </MotiView>
         );
       })}
     </View>
@@ -133,88 +120,26 @@ export default function TaskList({ tasks, onTaskDeleted }: TaskListProps) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    gap: 12,
+  container: { gap: 2 },
+  row: { flexDirection: 'row', gap: 12 },
+  timeCol: { width: 46, alignItems: 'center', paddingTop: 14 },
+  time: { color: '#FFF', fontSize: 13, fontWeight: '800' },
+  rail: { flex: 1, width: 2, borderRadius: 1, backgroundColor: 'rgba(179,113,255,0.18)', marginTop: 8, marginBottom: -4 },
+  faded: { opacity: 0.45 },
+  card: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10,
+    padding: 14, paddingLeft: 16, borderRadius: 18, overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(179,113,255,0.2)',
   },
-  taskCard: {
-    borderRadius: 20,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  taskBlur: {
-    borderRadius: 20,
-    overflow: 'hidden',
-  },
-  taskGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-  },
-  iconContainer: {
-    marginRight: 16,
-  },
-  iconGradient: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: theme.colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  taskContent: {
-    flex: 1,
-  },
-  taskHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  taskType: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: theme.colors.text.secondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginRight: 8,
-  },
-  aiBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(139, 92, 246, 0.2)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
-    gap: 4,
-  },
-  aiBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: theme.colors.primary,
-  },
-  taskTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: theme.colors.text.primary,
-    marginBottom: 6,
-  },
-  taskTime: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  taskTimeText: {
-    fontSize: 14,
-    color: theme.colors.text.secondary,
-    fontWeight: '500',
-  },
-  deleteButton: {
-    padding: 8,
-    marginLeft: 8,
-  },
+  cardDone: { backgroundColor: 'rgba(66,255,176,0.05)', borderColor: 'rgba(66,255,176,0.22)' },
+  bar: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 4 },
+  cardTop: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
+  chip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 },
+  chipText: { fontSize: 11, fontWeight: '800' },
+  ai: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 999, backgroundColor: 'rgba(179,113,255,0.14)' },
+  aiText: { color: '#B371FF', fontSize: 10.5, fontWeight: '800' },
+  title: { color: '#FFF', fontSize: 15.5, fontWeight: '700', lineHeight: 20 },
+  titleDone: { textDecorationLine: 'line-through', opacity: 0.55 },
+  notes: { color: 'rgba(234,226,247,0.6)', fontSize: 13, lineHeight: 18, marginTop: 4 },
+  check: { width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: 'rgba(255,255,255,0.3)', alignItems: 'center', justifyContent: 'center' },
 });
-

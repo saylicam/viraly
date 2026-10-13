@@ -1,699 +1,441 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useRef, useState } from 'react';
+import {
+  View, Text, StyleSheet, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, ScrollView, Keyboard, Image, ActivityIndicator,
+} from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
+import { MotiView } from 'moti';
 import { Ionicons } from '@expo/vector-icons';
-import { ChevronDown } from 'lucide-react-native';
+import { ChevronLeft, Check } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
-import { ScreenBackground } from '../components/ui/ScreenBackground';
-import { NeonButton } from '../components/ui/NeonButton';
+import { OnboardingShell, PrimaryButton, StepBar, TextLink, OB } from '../components/onboarding/OnboardingUI';
 import { useAuth } from '../hooks/useAuth';
-
-const { width } = Dimensions.get('window');
+import { answersToProfile, saveCreatorProfile, normalizeTikTok, loadLocalProfile, type TikTokPreview } from '../services/creatorProfile';
+import { apiService } from '../services/api';
+import { formatCount } from '../utils/format';
 
 interface QuestionnaireScreenProps {
   navigation: any;
 }
 
+type Option = { key: string; label: string; icon: keyof typeof Ionicons.glyphMap; sub?: string };
 interface Step {
   key: string;
-  title: string;
-  subtitle?: string;
-  multi?: boolean;
-  options: { 
-    key: string; 
-    label: string; 
-    icon?: keyof typeof Ionicons.glyphMap; 
-    sub?: string; 
-    gradient?: string[];
-  }[];
+  title: (name: string) => string;
+  subtitle: string;
+  kind: 'text' | 'single' | 'multi' | 'handle';
+  max?: number;
+  options?: Option[];
 }
+
+const MAX_NICHES = 3;
 
 const STEPS: Step[] = [
   {
-    key: 'level',
-    title: "Quel est ton niveau d'expérience ?",
-    subtitle: 'Aide-nous à personnaliser ton coaching',
-    options: [
-      { 
-        key: 'beginner', 
-        label: 'Débutant·e', 
-        icon: 'phone-portrait-outline', 
-        sub: 'Je débute',
-        gradient: ['#7B33F7', '#FF4FF9'], // Violet / fuchsia
-      },
-      { 
-        key: 'intermediate', 
-        label: 'Intermédiaire', 
-        icon: 'camera-outline', 
-        sub: 'Moins de 10K vues',
-        gradient: ['#FF4FF9', '#B371FF'], // Rose / violet clair
-      },
-      { 
-        key: 'advanced', 
-        label: 'Avancé·e', 
-        icon: 'videocam-outline', 
-        sub: '10K à 50K vues',
-        gradient: ['#4FC3FF', '#7B33F7'], // Bleu / violet
-      },
-      { 
-        key: 'pro', 
-        label: 'Pro', 
-        icon: 'trophy-outline', 
-        sub: 'Plus de 50K vues',
-        gradient: ['#FF4FF9', '#FF5DF5'], // Rose / magenta
-      },
-    ],
+    key: 'name',
+    kind: 'text',
+    title: () => 'Comment on t’appelle ?',
+    subtitle: 'Ton prénom ou ton pseudo de créateur',
   },
   {
-    key: 'frequency',
-    title: 'À quelle fréquence publies-tu ?',
-    subtitle: 'Pour calibrer ton calendrier intelligent',
+    key: 'level',
+    kind: 'single',
+    title: (n) => (n ? `Enchanté ${n} 👋\nOù en es-tu sur TikTok ?` : 'Où en es-tu sur TikTok ?'),
+    subtitle: 'Ton coaching s’adapte à ton niveau',
     options: [
-      { 
-        key: '1week', 
-        label: '1 fois par semaine', 
-        icon: 'calendar-outline',
-        gradient: ['#7B33F7', '#FF4FF9'],
-      },
-      { 
-        key: '2week', 
-        label: '2 à 3 fois par semaine', 
-        icon: 'calendar-outline',
-        gradient: ['#FF4FF9', '#B371FF'],
-      },
-      { 
-        key: 'daily', 
-        label: 'Tous les jours', 
-        icon: 'calendar-outline',
-        gradient: ['#4FC3FF', '#7B33F7'],
-      },
-      { 
-        key: 'irregular', 
-        label: 'Irrégulièrement', 
-        icon: 'calendar-outline',
-        gradient: ['#B371FF', '#FF4FF9'],
-      },
+      { key: 'beginner', label: 'Je débute', icon: 'leaf-outline', sub: 'Peu ou pas de vidéos publiées' },
+      { key: 'intermediate', label: 'Intermédiaire', icon: 'trending-up-outline', sub: 'Moins de 10 k vues par vidéo' },
+      { key: 'advanced', label: 'Avancé·e', icon: 'rocket-outline', sub: '10 k à 50 k vues par vidéo' },
+      { key: 'pro', label: 'Pro', icon: 'trophy-outline', sub: 'Plus de 50 k vues par vidéo' },
     ],
   },
   {
     key: 'niches',
-    title: 'Quel est ton type de contenu ?',
-    subtitle: 'Choisis tes niches principales',
-    multi: true,
+    kind: 'multi',
+    max: MAX_NICHES,
+    title: () => 'Tu fais quel type de contenu ?',
+    subtitle: `Choisis jusqu’à ${MAX_NICHES} niches. La première sera ta niche principale.`,
     options: [
-      { 
-        key: 'comedy', 
-        label: 'Comédie', 
-        icon: 'happy-outline',
-        gradient: ['#7B33F7', '#FF4FF9'],
-      },
-      { 
-        key: 'music', 
-        label: 'Musique', 
-        icon: 'musical-notes-outline',
-        gradient: ['#FF4FF9', '#B371FF'],
-      },
-      { 
-        key: 'beauty', 
-        label: 'Beauté', 
-        icon: 'sparkles-outline',
-        gradient: ['#4FC3FF', '#7B33F7'],
-      },
-      { 
-        key: 'education', 
-        label: 'Éducation', 
-        icon: 'school-outline',
-        gradient: ['#FF4FF9', '#FF5DF5'],
-      },
-      { 
-        key: 'gaming', 
-        label: 'Gaming', 
-        icon: 'game-controller-outline',
-        gradient: ['#7B33F7', '#B371FF'],
-      },
-      { 
-        key: 'fitness', 
-        label: 'Fitness', 
-        icon: 'fitness-outline',
-        gradient: ['#4FC3FF', '#FF4FF9'],
-      },
-      { 
-        key: 'tech', 
-        label: 'Tech', 
-        icon: 'hardware-chip-outline',
-        gradient: ['#B371FF', '#7B33F7'],
-      },
-      { 
-        key: 'food', 
-        label: 'Cuisine', 
-        icon: 'restaurant-outline',
-        gradient: ['#FF4FF9', '#B371FF'],
-      },
-      { 
-        key: 'travel', 
-        label: 'Voyages', 
-        icon: 'airplane-outline',
-        gradient: ['#4FC3FF', '#B371FF'],
-      },
+      { key: 'comedy', label: 'Comédie', icon: 'happy-outline' },
+      { key: 'music', label: 'Musique', icon: 'musical-notes-outline' },
+      { key: 'beauty', label: 'Beauté', icon: 'sparkles-outline' },
+      { key: 'education', label: 'Éducation', icon: 'school-outline' },
+      { key: 'gaming', label: 'Gaming', icon: 'game-controller-outline' },
+      { key: 'fitness', label: 'Fitness', icon: 'barbell-outline' },
+      { key: 'tech', label: 'Tech', icon: 'hardware-chip-outline' },
+      { key: 'food', label: 'Cuisine', icon: 'restaurant-outline' },
+      { key: 'travel', label: 'Voyages', icon: 'airplane-outline' },
     ],
   },
   {
+    key: 'tiktok',
+    kind: 'handle',
+    title: () => 'Ton compte TikTok ?',
+    subtitle: 'L’IA étudie tes vraies vidéos pour des conseils faits pour toi. Facultatif.',
+  },
+  {
     key: 'goal',
-    title: 'Quel est ton objectif principal ?',
-    subtitle: 'Ce qui te motive le plus',
+    kind: 'single',
+    title: () => 'Ton objectif principal ?',
+    subtitle: 'On priorise les conseils qui t’en rapprochent',
     options: [
-      { 
-        key: 'views', 
-        label: 'Augmenter mes vues', 
-        icon: 'eye-outline', 
-        sub: 'Plus de visibilité',
-        gradient: ['#7B33F7', '#FF4FF9'],
-      },
-      { 
-        key: 'engagement', 
-        label: "Booster l'engagement", 
-        icon: 'heart-outline', 
-        sub: "Plus d'interactions",
-        gradient: ['#FF4FF9', '#B371FF'],
-      },
-      { 
-        key: 'fanbase', 
-        label: 'Construire ma communauté', 
-        icon: 'people-outline', 
-        sub: 'Plus de followers',
-        gradient: ['#4FC3FF', '#7B33F7'],
-      },
-      { 
-        key: 'monetization', 
-        label: 'Monétiser mon contenu', 
-        icon: 'cash-outline', 
-        sub: 'Générer des revenus',
-        gradient: ['#FF4FF9', '#FF5DF5'],
-      },
+      { key: 'views', label: 'Faire plus de vues', icon: 'eye-outline', sub: 'Être vu par plus de monde' },
+      { key: 'engagement', label: 'Plus d’engagement', icon: 'heart-outline', sub: 'Likes, commentaires, partages' },
+      { key: 'fanbase', label: 'Construire ma communauté', icon: 'people-outline', sub: 'Des abonnés qui reviennent' },
+      { key: 'monetization', label: 'Monétiser mon contenu', icon: 'cash-outline', sub: 'Partenariats et revenus' },
+    ],
+  },
+  {
+    key: 'blocker',
+    kind: 'single',
+    title: () => 'Qu’est-ce qui te bloque le plus ?',
+    subtitle: 'Sois honnête : ton plan va s’attaquer à ça en premier',
+    options: [
+      { key: 'ideas', label: 'Trouver des idées', icon: 'bulb-outline', sub: 'Je ne sais pas quoi filmer' },
+      { key: 'hook', label: 'Accrocher dès le début', icon: 'flash-outline', sub: 'Les gens scrollent trop vite' },
+      { key: 'consistency', label: 'Être régulier', icon: 'repeat-outline', sub: 'Je publie, puis j’arrête' },
+      { key: 'editing', label: 'Le montage', icon: 'cut-outline', sub: 'Ça me prend trop de temps' },
+      { key: 'algorithm', label: 'Comprendre l’algorithme', icon: 'help-circle-outline', sub: 'Je ne sais pas pourquoi ça marche ou pas' },
+    ],
+  },
+  {
+    key: 'frequency',
+    kind: 'single',
+    title: () => 'Ton rythme idéal ?',
+    subtitle: 'On remplit ton calendrier avec les meilleurs créneaux',
+    options: [
+      { key: '1week', label: '1 vidéo par semaine', icon: 'calendar-clear-outline', sub: 'Tranquille, mais régulier' },
+      { key: '2week', label: '2 à 3 vidéos par semaine', icon: 'calendar-outline', sub: 'Le bon équilibre pour grandir' },
+      { key: 'daily', label: 'Presque tous les jours', icon: 'flame-outline', sub: 'Pour accélérer' },
+      { key: 'irregular', label: 'Quand j’ai le temps', icon: 'time-outline', sub: 'Pas de pression' },
     ],
   },
 ];
 
 export default function QuestionnaireScreen({ navigation }: QuestionnaireScreenProps) {
   const { user } = useAuth();
-  const [currentStep, setCurrentStep] = useState(0);
+  const [index, setIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
-  const [isLoading, setIsLoading] = useState(false);
-  const [showScrollHint, setShowScrollHint] = useState(true);
+  const [name, setName] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [handle, setHandle] = useState('');
+  const [preview, setPreview] = useState<TikTokPreview | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [handleError, setHandleError] = useState<string | null>(null);
 
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(50)).current;
-  const scrollY = useRef(new Animated.Value(0)).current;
-  const scrollHintAnim = useRef(new Animated.Value(0)).current;
+  // Profil modifié depuis l'app : on repart du compte TikTok déjà relié
+  React.useEffect(() => {
+    loadLocalProfile().then((p) => { if (p?.tiktok) setHandle(p.tiktok); }).catch(() => {});
+  }, []);
+  const advancing = useRef(false);
 
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 500,
-        useNativeDriver: true,
-      }),
-    ]).start();
+  const step = STEPS[index];
+  const selected = answers[step.key] ?? [];
+  const firstName = name.trim().split(/\s+/)[0] ?? '';
+  const isLast = index === STEPS.length - 1;
 
-    if (showScrollHint) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(scrollHintAnim, {
-            toValue: 1,
-            duration: 1500,
-            useNativeDriver: true,
-          }),
-          Animated.timing(scrollHintAnim, {
-            toValue: 0,
-            duration: 1500,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
-    }
-
-    const listener = scrollY.addListener(({ value }) => {
-      if (value > 50) {
-        setShowScrollHint(false);
-      }
-    });
-
-    return () => {
-      scrollY.removeListener(listener);
-    };
-  }, [currentStep]);
-
-  const handleOptionSelect = (stepKey: string, optionKey: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    
-    const step = STEPS.find(s => s.key === stepKey);
-    if (!step) return;
-
-    if (step.multi) {
-      setAnswers(prev => ({
-        ...prev,
-        [stepKey]: prev[stepKey]?.includes(optionKey)
-          ? prev[stepKey].filter(key => key !== optionKey)
-          : [...(prev[stepKey] || []), optionKey]
-      }));
-    } else {
-      setAnswers(prev => ({
-        ...prev,
-        [stepKey]: [optionKey]
-      }));
-    }
-  };
-
-  const handleNext = () => {
-    if (currentStep < STEPS.length - 1) {
-      setCurrentStep(prev => prev + 1);
-      setShowScrollHint(true);
-    } else {
-      handleComplete();
-    }
-  };
-
-  const handleComplete = async () => {
-    setIsLoading(true);
+  const finish = async (final: Record<string, string[]>) => {
+    setSaving(true);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    navigation.navigate('Calculating', { answers });
+    const uid = user?.uid ?? null;
+    const prof = answersToProfile(final);
+    await saveCreatorProfile({ ...prof, ...(preview && prof.tiktok === preview.handle ? { tiktokPreview: preview } : {}) }, uid).catch(() => {});
+    setSaving(false);
+    navigation.navigate('Calculating', { answers: final });
   };
 
-  const currentStepData = STEPS[currentStep];
-  const isStepComplete = answers[currentStepData.key]?.length > 0;
-  const progress = ((currentStep + 1) / STEPS.length) * 100;
+  const next = (final = answers) => {
+    advancing.current = false;
+    if (isLast) finish(final);
+    else setIndex((i) => i + 1);
+  };
 
-  const gradientOpacity = scrollY.interpolate({
-    inputRange: [0, 100],
-    outputRange: [1, 0],
-    extrapolate: 'clamp',
-  });
+  const back = () => {
+    Haptics.selectionAsync();
+    if (index === 0) { if (navigation.canGoBack()) navigation.goBack(); }
+    else setIndex((i) => i - 1);
+  };
 
-  const scrollHintTranslateY = scrollHintAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, 6],
-  });
+  const choose = (key: string) => {
+    if (advancing.current) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (step.kind === 'multi') {
+      const has = selected.includes(key);
+      if (!has && selected.length >= (step.max ?? 99)) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        return;
+      }
+      setAnswers((a) => ({ ...a, [step.key]: has ? selected.filter((k) => k !== key) : [...selected, key] }));
+      return;
+    }
+    // Choix unique : on passe tout seul à la question suivante
+    const final = { ...answers, [step.key]: [key] };
+    setAnswers(final);
+    advancing.current = true;
+    setTimeout(() => next(final), 280);
+  };
+
+  const submitName = () => {
+    Keyboard.dismiss();
+    const final = { ...answers, name: [name.trim()] };
+    setAnswers(final);
+    next(final);
+  };
+
+  // Compte TikTok : on vérifie qu'il existe et on montre la photo pour confirmer
+  const checkHandle = async () => {
+    Keyboard.dismiss();
+    const h = normalizeTikTok(handle);
+    if (!h) {
+      setHandleError('Écris ton pseudo TikTok, par exemple @ton.pseudo');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      return;
+    }
+    setHandleError(null);
+    setChecking(true);
+    const res = await apiService.previewTikTok(h);
+    setChecking(false);
+    if (res.success && res.data) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setPreview(res.data);
+    } else if (res.code === 'NOT_FOUND' || res.code === 'INVALID_HANDLE') {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      setHandleError(res.error ?? 'Compte introuvable. Vérifie l’orthographe.');
+    } else {
+      // Service momentanément indisponible : on garde le pseudo, le bilan se fera plus tard
+      confirmHandle(h);
+    }
+  };
+
+  const confirmHandle = (h: string) => {
+    const final = { ...answers, tiktok: [h] };
+    setAnswers(final);
+    next(final);
+  };
+
+  const skipHandle = () => {
+    Keyboard.dismiss();
+    setPreview(null);
+    const { tiktok, ...rest } = answers;
+    setAnswers(rest);
+    next(rest);
+  };
+
+  const footer = step.kind === 'handle' ? (
+    preview ? (
+      <>
+        <PrimaryButton label="Oui, c’est moi" onPress={() => confirmHandle(preview.handle)} />
+        <TextLink label="Ce n’est pas mon compte" onPress={() => { setPreview(null); setHandle(''); }} />
+      </>
+    ) : (
+      <>
+        <PrimaryButton label={checking ? 'Recherche de ton compte…' : 'Trouver mon compte'} onPress={checkHandle} loading={checking} disabled={handle.replace(/^@/, '').trim().length < 2} />
+        <TextLink label="Je n’ai pas encore de compte TikTok" onPress={skipHandle} />
+      </>
+    )
+  ) : step.kind === 'text' ? (
+    <>
+      <PrimaryButton label="Continuer" onPress={submitName} disabled={name.trim().length < 2} />
+      <TextLink label="Passer cette étape" onPress={() => { Keyboard.dismiss(); next(); }} />
+    </>
+  ) : step.kind === 'multi' ? (
+    <PrimaryButton
+      label={selected.length ? `Continuer (${selected.length}/${step.max})` : 'Choisis au moins une niche'}
+      onPress={() => next()}
+      disabled={!selected.length}
+    />
+  ) : isLast && saving ? (
+    <PrimaryButton label="Création de ton plan…" onPress={() => {}} loading />
+  ) : null;
 
   return (
-    <View style={styles.container}>
-      {/* Fond gradient premium mauve-bleuté */}
-      <LinearGradient
-        colors={['#0E001A', '#150027', '#1B0033']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={StyleSheet.absoluteFillObject}
-      />
-      
-      {/* Halos / Blobs subtils pour profondeur */}
-      <View style={styles.blobsContainer}>
-        <View style={[styles.blob1, { backgroundColor: 'rgba(123, 51, 247, 0.12)' }]} />
-        <View style={[styles.blob2, { backgroundColor: 'rgba(79, 195, 255, 0.1)' }]} />
-      </View>
-
-      {/* Progress Bar */}
-      <View style={styles.progressContainer}>
-        <View style={styles.progressBar}>
-          <Animated.View 
-            style={[
-              styles.progressFill, 
-              { width: `${progress}%` }
-            ]} 
-          />
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: OB.bg }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <OnboardingShell footer={footer}>
+        {/* En-tête : retour + progression */}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={back} style={styles.back} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <ChevronLeft size={24} color="#FFF" />
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}><StepBar step={index} total={STEPS.length} /></View>
+          <Text style={styles.count}>{index + 1}/{STEPS.length}</Text>
         </View>
-        <Text style={styles.progressText}>
-          Étape {currentStep + 1} / {STEPS.length}
-        </Text>
-      </View>
 
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        fadingEdgeLength={0}
-        overScrollMode="never"
-        onScroll={Animated.event(
-          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-          { useNativeDriver: false }
-        )}
-        scrollEventThrottle={16}
-      >
-        <Animated.View
-          style={[
-            styles.content,
-            {
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }]
-            }
-          ]}
-        >
-          {/* Question */}
-          <View style={styles.questionContainer}>
-            <Text style={styles.questionTitle}>{currentStepData.title}</Text>
-            {currentStepData.subtitle && (
-              <Text style={styles.questionSubtitle}>{currentStepData.subtitle}</Text>
-            )}
-          </View>
+        <MotiView key={step.key} from={{ opacity: 0, translateX: 24 }} animate={{ opacity: 1, translateX: 0 }} transition={{ type: 'timing', duration: 320 }} style={{ flex: 1 }}>
+          <Text style={styles.title}>{step.title(firstName)}</Text>
+          <Text style={styles.subtitle}>{step.subtitle}</Text>
 
-          {/* Options - Cartes premium compactes */}
-          <View style={styles.optionsContainer}>
-            {currentStepData.options.map((option, index) => {
-              const isSelected = answers[currentStepData.key]?.includes(option.key);
-              const gradient = option.gradient || ['#7B33F7', '#FF4FF9'];
-              
-              return (
-                <TouchableOpacity
-                  key={option.key}
-                  activeOpacity={0.85}
-                  onPress={() => handleOptionSelect(currentStepData.key, option.key)}
-                  style={styles.optionCardWrapper}
-                >
-                  <View style={[
-                    styles.optionCard,
-                    isSelected && styles.optionCardSelected,
-                  ]}>
-                    <View style={styles.optionCardBackground} />
-                    <LinearGradient
-                      colors={isSelected 
-                        ? ['rgba(123, 51, 247, 0.15)', 'rgba(255, 79, 249, 0.1)']
-                        : ['rgba(255, 255, 255, 0.03)', 'rgba(255, 255, 255, 0.06)']
-                      }
-                      style={styles.optionCardGradient}
-                    >
-                      {option.icon && (
-                        <View style={styles.optionIconContainer}>
-                          <LinearGradient
-                            colors={gradient}
-                            style={styles.optionIcon}
-                          >
-                            <Ionicons
-                              name={option.icon}
-                              size={22}
-                              color="white"
-                            />
-                          </LinearGradient>
-                        </View>
-                      )}
-                      <View style={styles.optionTextContainer}>
-                        <Text style={[
-                          styles.optionLabel,
-                          isSelected && styles.optionLabelSelected
-                        ]}>
-                          {option.label}
-                        </Text>
-                        {option.sub && (
-                          <Text style={[
-                            styles.optionSub,
-                            isSelected && styles.optionSubSelected
-                          ]}>
-                            {option.sub}
-                          </Text>
-                        )}
-                      </View>
-                      {isSelected && (
-                        <View style={styles.checkmarkContainer}>
-                          <LinearGradient
-                            colors={gradient}
-                            style={styles.checkmarkGradient}
-                          >
-                            <Ionicons
-                              name="checkmark"
-                              size={16}
-                              color="white"
-                            />
-                          </LinearGradient>
-                        </View>
-                      )}
-                    </LinearGradient>
+          {step.kind === 'handle' ? (
+            preview ? (
+              <MotiView from={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} transition={{ type: 'spring', damping: 14 }}>
+                <LinearGradient colors={['rgba(255,79,249,0.22)', 'rgba(123,31,224,0.18)']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.found}>
+                  <View style={styles.avatarRing}>
+                    {preview.avatar ? <Image source={{ uri: preview.avatar }} style={styles.avatar} /> : <View style={[styles.avatar, styles.avatarEmpty]}><Text style={styles.avatarLetter}>{preview.nickname.slice(0, 1).toUpperCase()}</Text></View>}
                   </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          {/* Scroll Hint */}
-          {showScrollHint && (
-            <Animated.View
-              style={[
-                styles.scrollHint,
-                {
-                  opacity: scrollHintAnim,
-                  transform: [{ translateY: scrollHintTranslateY }],
-                }
-              ]}
-            >
-              <ChevronDown size={16} color="rgba(255, 255, 255, 0.5)" />
-            </Animated.View>
+                  <Text style={styles.foundName} numberOfLines={1}>{preview.nickname}{preview.verified ? ' ✓' : ''}</Text>
+                  <Text style={styles.foundHandle}>@{preview.handle}</Text>
+                  <View style={styles.foundStats}>
+                    {[
+                      { v: preview.followers, l: 'abonnés' },
+                      { v: preview.likes, l: 'j’aime' },
+                      { v: preview.videoCount, l: 'vidéos' },
+                    ].map((x, i) => (
+                      <MotiView key={x.l} from={{ opacity: 0, translateY: 8 }} animate={{ opacity: 1, translateY: 0 }} transition={{ delay: 200 + i * 120 }} style={styles.foundStat}>
+                        <Text style={styles.foundValue}>{formatCount(x.v)}</Text>
+                        <Text style={styles.foundLabel}>{x.l}</Text>
+                      </MotiView>
+                    ))}
+                  </View>
+                  <Text style={styles.foundHint}>✨ Ton bilan complet t’attend dans l’app</Text>
+                </LinearGradient>
+              </MotiView>
+            ) : (
+              <View style={styles.inputWrap}>
+                <View style={[styles.handleBox, handleError && { borderColor: '#FF6B8B' }]}>
+                  <Text style={styles.at}>@</Text>
+                  <TextInput
+                    value={handle.replace(/^@+/, '')}
+                    onChangeText={(t) => { setHandle(t); setHandleError(null); }}
+                    placeholder="ton.pseudo"
+                    placeholderTextColor={OB.faint}
+                    style={styles.handleInput}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType={Platform.OS === 'ios' ? 'twitter' : 'default'}
+                    maxLength={60}
+                    returnKeyType="search"
+                    onSubmitEditing={checkHandle}
+                  />
+                  {checking ? <ActivityIndicator color={OB.pink} /> : null}
+                </View>
+                {handleError ? <Text style={styles.handleError}>{handleError}</Text> : null}
+                <View style={styles.perks}>
+                  {[
+                    { i: 'stats-chart-outline' as const, t: 'Tes vraies stats : vues, engagement, régularité' },
+                    { i: 'sparkles-outline' as const, t: 'Ce qui marche chez toi, et pourquoi' },
+                    { i: 'lock-closed-outline' as const, t: 'Aucun mot de passe : on lit seulement ton profil public' },
+                  ].map((p) => (
+                    <View key={p.t} style={styles.perk}>
+                      <Ionicons name={p.i} size={17} color={OB.pink} />
+                      <Text style={styles.perkText}>{p.t}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )
+          ) : step.kind === 'text' ? (
+            <View style={styles.inputWrap}>
+              <TextInput
+                value={name}
+                onChangeText={setName}
+                placeholder="Ton prénom"
+                placeholderTextColor={OB.faint}
+                style={styles.input}
+                autoFocus
+                autoCapitalize="words"
+                autoCorrect={false}
+                maxLength={24}
+                returnKeyType="next"
+                onSubmitEditing={() => name.trim().length >= 2 && submitName()}
+              />
+              <Text style={styles.inputHint}>On l’utilise seulement pour te parler dans l’app.</Text>
+            </View>
+          ) : step.kind === 'multi' ? (
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.grid}>
+              {step.options!.map((o) => {
+                const pos = selected.indexOf(o.key);
+                const on = pos >= 0;
+                return (
+                  <TouchableOpacity key={o.key} activeOpacity={0.85} onPress={() => choose(o.key)} style={[styles.tile, on && styles.optionOn]}>
+                    <Ionicons name={o.icon} size={22} color={on ? OB.pink : '#D9C8F5'} />
+                    <Text style={[styles.tileLabel, on && { color: '#FFF' }]}>{o.label}</Text>
+                    {on ? (
+                      <View style={styles.tileBadge}><Text style={styles.tileBadgeText}>{pos === 0 ? '★' : pos + 1}</Text></View>
+                    ) : null}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          ) : (
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.list}>
+              {step.options!.map((o) => {
+                const on = selected.includes(o.key);
+                return (
+                  <TouchableOpacity key={o.key} activeOpacity={0.85} onPress={() => choose(o.key)} style={[styles.option, on && styles.optionOn]}>
+                    <View style={[styles.optionIcon, on && { backgroundColor: 'rgba(255,79,249,0.25)' }]}>
+                      <Ionicons name={o.icon} size={21} color={on ? '#FFF' : '#D9C8F5'} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.optionLabel}>{o.label}</Text>
+                      {o.sub ? <Text style={styles.optionSub}>{o.sub}</Text> : null}
+                    </View>
+                    <View style={[styles.radio, on && styles.radioOn]}>{on ? <Check size={14} color="#FFF" strokeWidth={3} /> : null}</View>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
           )}
-
-          {/* Spacer pour le bouton sticky */}
-          <View style={{ height: 100 }} />
-        </Animated.View>
-      </ScrollView>
-
-      {/* Bouton Sticky en bas - Style premium néon - Zone fixe sans overlay */}
-      <View style={styles.stickyButtonContainer}>
-        <TouchableOpacity
-          onPress={handleNext}
-          disabled={!isStepComplete || isLoading}
-          activeOpacity={0.85}
-          style={styles.stickyButtonTouchable}
-        >
-          <LinearGradient
-            colors={['#7B33F7', '#FF4FF9']}
-            style={styles.stickyButtonGradient}
-          >
-            <Text style={styles.stickyButtonText}>
-              {isLoading ? 'Chargement...' : currentStep === STEPS.length - 1 ? 'Terminer' : 'Continuer'}
-            </Text>
-          </LinearGradient>
-        </TouchableOpacity>
-      </View>
-    </View>
+        </MotiView>
+      </OnboardingShell>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0E001A',
+  header: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 26 },
+  back: { width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(255,255,255,0.07)', alignItems: 'center', justifyContent: 'center' },
+  count: { color: OB.faint, fontSize: 13, fontWeight: '700', width: 30, textAlign: 'right' },
+
+  title: { color: '#FFF', fontSize: 28, lineHeight: 34, fontWeight: '900', letterSpacing: -0.3 },
+  subtitle: { color: OB.muted, fontSize: 15, lineHeight: 21, marginTop: 8, marginBottom: 22 },
+
+  inputWrap: { marginTop: 6 },
+  input: {
+    height: 62, borderRadius: 18, paddingHorizontal: 20, fontSize: 20, fontWeight: '700', color: '#FFF',
+    backgroundColor: OB.card, borderWidth: 1.5, borderColor: OB.border,
   },
-  blobsContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    overflow: 'hidden',
+  inputHint: { color: OB.faint, fontSize: 13, marginTop: 10, marginLeft: 4 },
+
+  handleBox: {
+    height: 62, borderRadius: 18, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: OB.card, borderWidth: 1.5, borderColor: OB.border,
   },
-  blob1: {
-    position: 'absolute',
-    width: 400,
-    height: 400,
-    borderRadius: 200,
-    top: -100,
-    right: -100,
-    opacity: 0.12,
+  at: { color: OB.pink, fontSize: 22, fontWeight: '900' },
+  handleInput: { flex: 1, height: '100%', fontSize: 20, fontWeight: '700', color: '#FFF' },
+  handleError: { color: '#FF8FA8', fontSize: 13, fontWeight: '600', marginTop: 10, marginLeft: 4 },
+  perks: { marginTop: 22, gap: 12 },
+  perk: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  perkText: { color: OB.muted, fontSize: 14, flex: 1 },
+
+  found: { borderRadius: 26, padding: 22, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,79,249,0.35)' },
+  avatarRing: { padding: 3, borderRadius: 52, backgroundColor: OB.pink },
+  avatar: { width: 92, height: 92, borderRadius: 46, borderWidth: 3, borderColor: OB.bg },
+  avatarEmpty: { backgroundColor: '#2A1650', alignItems: 'center', justifyContent: 'center' },
+  avatarLetter: { color: '#FFF', fontSize: 34, fontWeight: '900' },
+  foundName: { color: '#FFF', fontSize: 21, fontWeight: '900', marginTop: 14 },
+  foundHandle: { color: OB.muted, fontSize: 14, fontWeight: '600', marginTop: 2 },
+  foundStats: { flexDirection: 'row', alignSelf: 'stretch', marginTop: 18, gap: 8 },
+  foundStat: { flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.06)' },
+  foundValue: { color: '#FFF', fontSize: 20, fontWeight: '900' },
+  foundLabel: { color: OB.faint, fontSize: 12, fontWeight: '700', marginTop: 2 },
+  foundHint: { color: '#F5D9FF', fontSize: 13, fontWeight: '700', marginTop: 16 },
+
+  list: { gap: 10, paddingBottom: 16 },
+  option: {
+    flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14, paddingHorizontal: 14,
+    borderRadius: 20, backgroundColor: OB.card, borderWidth: 1.5, borderColor: OB.border,
   },
-  blob2: {
-    position: 'absolute',
-    width: 350,
-    height: 350,
-    borderRadius: 175,
-    bottom: -50,
-    left: -50,
-    opacity: 0.1,
+  optionOn: { backgroundColor: OB.cardActive, borderColor: OB.borderActive },
+  optionIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: 'rgba(179,113,255,0.14)', alignItems: 'center', justifyContent: 'center' },
+  optionLabel: { color: '#FFF', fontSize: 16, fontWeight: '700' },
+  optionSub: { color: OB.faint, fontSize: 13, marginTop: 2 },
+  radio: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center' },
+  radioOn: { backgroundColor: OB.pink, borderColor: OB.pink },
+
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingBottom: 16 },
+  tile: {
+    width: '48%', flexGrow: 1, height: 64, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16,
+    borderRadius: 18, backgroundColor: OB.card, borderWidth: 1.5, borderColor: OB.border,
   },
-  progressContainer: {
-    paddingHorizontal: 22,
-    paddingTop: 60,
-    paddingBottom: 16,
-    zIndex: 1,
-  },
-  progressBar: {
-    height: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    borderRadius: 2,
-    marginBottom: 8,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: '#B371FF',
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  progressText: {
-    color: '#EAEAEA',
-    fontSize: 12,
-    textAlign: 'right',
-    fontWeight: '600',
-    opacity: 0.8,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    paddingBottom: 120,
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 22,
-    paddingBottom: 20,
-  },
-  questionContainer: {
-    marginBottom: 24,
-  },
-  questionTitle: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    marginBottom: 8,
-    textAlign: 'center',
-    lineHeight: 32,
-    letterSpacing: 0.2,
-  },
-  questionSubtitle: {
-    fontSize: 14,
-    color: '#EAEAEA',
-    textAlign: 'center',
-    lineHeight: 20,
-    opacity: 0.85,
-  },
-  optionsContainer: {
-    flex: 1,
-    gap: 12,
-    marginBottom: 20,
-  },
-  optionCardWrapper: {
-    borderRadius: 22,
-    overflow: 'hidden',
-  },
-  optionCard: {
-    borderRadius: 22,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(179, 113, 255, 0.35)',
-    shadowColor: '#7B33F7',
-    shadowOpacity: 0.22,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 6,
-    position: 'relative',
-  },
-  optionCardSelected: {
-    borderWidth: 1.4,
-    borderColor: 'rgba(179, 113, 255, 0.6)',
-    shadowColor: '#B371FF',
-    shadowOpacity: 0.35,
-    shadowRadius: 14,
-    elevation: 10,
-  },
-  optionCardBackground: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-  },
-  optionCardGradient: {
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  optionIconContainer: {
-    marginRight: 14,
-  },
-  optionIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#B371FF',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  optionTextContainer: {
-    flex: 1,
-  },
-  optionLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    marginBottom: 2,
-  },
-  optionLabelSelected: {
-    color: '#B371FF',
-    fontWeight: '700',
-  },
-  optionSub: {
-    fontSize: 12,
-    color: '#EAEAEA',
-    opacity: 0.7,
-  },
-  optionSubSelected: {
-    color: '#FF4FF9',
-    opacity: 0.9,
-  },
-  checkmarkContainer: {
-    marginLeft: 10,
-  },
-  checkmarkGradient: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#B371FF',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.5,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  scrollHint: {
-    alignItems: 'center',
-    marginTop: 8,
-    marginBottom: 16,
-  },
-  stickyButtonContainer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    paddingHorizontal: 22,
-    paddingBottom: 20,
-    paddingTop: 16,
-    backgroundColor: 'transparent',
-    zIndex: 10,
-  },
-  stickyButtonTouchable: {
-    width: '100%',
-    borderRadius: 30,
-    overflow: 'hidden',
-  },
-  stickyButtonGradient: {
-    borderRadius: 30,
-    paddingVertical: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#7B33F7',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  stickyButtonText: {
-    color: '#FFFFFF',
-    fontSize: 17,
-    fontWeight: '700',
-  },
+  tileLabel: { color: '#D9C8F5', fontSize: 15, fontWeight: '700', flex: 1 },
+  tileBadge: { width: 22, height: 22, borderRadius: 11, backgroundColor: OB.pink, alignItems: 'center', justifyContent: 'center' },
+  tileBadgeText: { color: '#FFF', fontSize: 11, fontWeight: '900' },
 });

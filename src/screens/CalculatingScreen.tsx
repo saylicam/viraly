@@ -1,580 +1,122 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, StyleSheet, Animated, Easing, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
-import { Ionicons } from '@expo/vector-icons';
+import { MotiView } from 'moti';
+import { Check } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
-import { theme } from '../theme';
-import AnimatedBackground from '../components/AnimatedBackground';
-
-const { width, height } = Dimensions.get('window');
+import { OnboardingShell, OB } from '../components/onboarding/OnboardingUI';
+import { NICHE_LABELS, GOAL_LABELS } from '../services/creatorProfile';
 
 interface CalculatingScreenProps {
   navigation: any;
-  route: {
-    params: {
-      answers: Record<string, string[]>;
-    };
-  };
+  route: { params: { answers: Record<string, string[]> } };
 }
 
-const LOADING_STEPS = [
-  { text: 'Analyse de ton profil...', icon: 'person', color: '#22c55e', glow: '#10B981' },
-  { text: 'Génération de ton plan personnalisé...', icon: 'bulb', color: '#22c55e', glow: '#10B981' },
-  { text: 'Optimisation de tes recommandations...', icon: 'settings', color: '#22c55e', glow: '#10B981' },
-  { text: 'Finalisation de ton coaching...', icon: 'checkmark-circle', color: theme.colors.primary, glow: '#EC4899' },
-];
+const DURATION = 5200; // un seul chrono pour la barre, le pourcentage et les étapes
 
 export default function CalculatingScreen({ navigation, route }: CalculatingScreenProps) {
-  const [currentStep, setCurrentStep] = useState(0);
-  const [completedSteps, setCompletedSteps] = useState<number[]>([]);
-  const [isComplete, setIsComplete] = useState(false);
-  
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(0.8)).current;
-  const rotateAnim = useRef(new Animated.Value(0)).current;
-  const progressAnim = useRef(new Animated.Value(0)).current;
-  const glowAnim = useRef(new Animated.Value(0)).current;
-  
-  // Références pour les animations de chaque étape
-  const stepAnims = useRef(
-    LOADING_STEPS.map(() => ({
-      opacity: new Animated.Value(0),
-      scale: new Animated.Value(0.5),
-      checkScale: new Animated.Value(0),
-      glow: new Animated.Value(0),
-    }))
-  ).current;
+  const answers = route.params?.answers ?? {};
+  const name = (answers.name?.[0] ?? '').trim().split(/\s+/)[0];
+  const niche = NICHE_LABELS[answers.niches?.[0] ?? ''];
+  const goal = GOAL_LABELS[answers.goal?.[0] ?? ''];
+
+  const steps = useMemo(() => [
+    name ? `On analyse ton profil, ${name}` : 'On analyse ton profil',
+    ...(answers.tiktok?.[0] ? [`On lit ton compte @${answers.tiktok[0]}`] : []),
+    niche ? `On regarde les tendances ${niche} de la semaine` : 'On regarde les tendances de la semaine',
+    goal ? `On cible ton objectif : ${goal.toLowerCase()}` : 'On adapte les conseils à ton objectif',
+    'On prépare ton calendrier',
+  ], [name, niche, goal, answers.tiktok?.[0]]);
+
+  const progress = useRef(new Animated.Value(0)).current;
+  const [percent, setPercent] = useState(0);
+  const spin = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // Animation d'entrée globale
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        tension: 50,
-        friction: 8,
-        useNativeDriver: true,
-      }),
-    ]).start();
-
-    // Animation de rotation continue du logo
-    const rotateAnimation = Animated.loop(
-      Animated.timing(rotateAnim, {
-        toValue: 1,
-        duration: 3000,
-        useNativeDriver: true,
-      })
-    );
-    rotateAnimation.start();
-
-    // Animation de la barre de progression
-    Animated.timing(progressAnim, {
-      toValue: 1,
-      duration: 6000,
-      useNativeDriver: false,
-    }).start();
-
-    // Animation du glow global
-    const glowAnimation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(glowAnim, {
-          toValue: 1,
-          duration: 2000,
-          useNativeDriver: false,
-        }),
-        Animated.timing(glowAnim, {
-          toValue: 0,
-          duration: 2000,
-          useNativeDriver: false,
-        }),
-      ])
-    );
-    glowAnimation.start();
-
-    return () => {
-      rotateAnimation.stop();
-      glowAnimation.stop();
-    };
-  }, []);
-
-  useEffect(() => {
-    // Animer chaque étape lorsqu'elle devient active
-    if (currentStep < LOADING_STEPS.length) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      
-      Animated.parallel([
-        Animated.timing(stepAnims[currentStep].opacity, {
-          toValue: 1,
-          duration: 600,
-          useNativeDriver: true,
-        }),
-        Animated.spring(stepAnims[currentStep].scale, {
-          toValue: 1,
-          tension: 80,
-          friction: 6,
-          useNativeDriver: true,
-        }),
-      ]).start();
-
-      // Animation du glow pour l'étape active
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(stepAnims[currentStep].glow, {
-            toValue: 1,
-            duration: 1000,
-            useNativeDriver: false,
-          }),
-          Animated.timing(stepAnims[currentStep].glow, {
-            toValue: 0,
-            duration: 1000,
-            useNativeDriver: false,
-          }),
-        ])
-      ).start();
-
-      // Marquer l'étape précédente comme complétée
-      if (currentStep > 0) {
-        setCompletedSteps(prev => [...prev, currentStep - 1]);
-        Animated.spring(stepAnims[currentStep - 1].checkScale, {
-          toValue: 1,
-          tension: 100,
-          friction: 7,
-          useNativeDriver: true,
-        }).start();
-      }
-    }
-  }, [currentStep]);
-
-  // Simulation des étapes de chargement
-  useEffect(() => {
-    const stepInterval = setInterval(() => {
-      setCurrentStep(prev => {
-        if (prev < LOADING_STEPS.length - 1) {
-          return prev + 1;
-        } else {
-          setIsComplete(true);
-          setCompletedSteps([0, 1, 2, 3]);
-          // Cocher la dernière étape
-          Animated.spring(stepAnims[3].checkScale, {
-            toValue: 1,
-            tension: 100,
-            friction: 7,
-            useNativeDriver: true,
-          }).start();
-          clearInterval(stepInterval);
-          return prev;
-        }
-      });
-    }, 1500);
-
-    // Redirection après 8 secondes
-    const redirectTimer = setTimeout(() => {
+    const id = progress.addListener(({ value }) => setPercent(Math.round(value * 100)));
+    const loop = Animated.loop(Animated.timing(spin, { toValue: 1, duration: 2400, easing: Easing.linear, useNativeDriver: true }));
+    loop.start();
+    Animated.timing(progress, { toValue: 1, duration: DURATION, easing: Easing.inOut(Easing.cubic), useNativeDriver: false }).start(({ finished }) => {
+      if (!finished) return;
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      navigation.navigate('Recommendation', { answers: route.params.answers });
-    }, 8000);
+      setTimeout(() => navigation.replace('Recommendation', { answers }), 450);
+    });
+    return () => { progress.removeListener(id); loop.stop(); progress.stopAnimation(); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    return () => {
-      clearInterval(stepInterval);
-      clearTimeout(redirectTimer);
-    };
-  }, []);
+  // Étape courante déduite du même pourcentage : 0-24 % → 1, 25-49 % → 2, etc.
+  const current = Math.min(steps.length - 1, Math.floor(percent / (100 / steps.length)));
+  const lastStep = useRef(-1);
+  useEffect(() => {
+    if (current !== lastStep.current) {
+      lastStep.current = current;
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  }, [current]);
 
-  const spin = rotateAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '360deg'],
-  });
-
-  const progressWidth = progressAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0%', '100%'],
-  });
-
-  const glowOpacity = glowAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.3, 0.7],
-  });
+  const width = progress.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
+  const rotate = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
 
   return (
-    <View style={styles.container}>
-      <LinearGradient
-        colors={['#0B021A', '#1E0F3C', '#0B021A']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={StyleSheet.absoluteFillObject}
-      />
-      
-      {/* Particules animées */}
-      <AnimatedBackground />
+    <OnboardingShell contentStyle={{ justifyContent: 'center' }}>
+      <View style={styles.orbWrap}>
+        <Animated.View style={[styles.orbRing, { transform: [{ rotate }] }]}>
+          <LinearGradient colors={[OB.pink, 'transparent', OB.lilac, 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+        </Animated.View>
+        <View style={styles.orbInner}>
+          <Image source={require('../../assets/logo-mark.png')} style={styles.logo} />
+        </View>
+      </View>
 
-      {/* Glow central */}
-      <Animated.View
-        style={[
-          StyleSheet.absoluteFillObject,
-          styles.centerGlow,
-          { opacity: glowOpacity }
-        ]}
-        pointerEvents="none"
-      >
-        <View style={styles.glowCircle} />
-      </Animated.View>
+      <Text style={styles.title}>On crée ton plan</Text>
+      <Text style={styles.subtitle}>Quelques secondes, on personnalise tout pour toi</Text>
 
-      <Animated.View
-        style={[
-          styles.content,
-          {
-            opacity: fadeAnim,
-            transform: [{ scale: scaleAnim }]
-          }
-        ]}
-      >
-        {/* Logo animé avec glow */}
-        <View style={styles.logoContainer}>
-          <Animated.View style={{ transform: [{ rotate: spin }] }}>
-            <View style={styles.logoGlow} />
-            <LinearGradient
-              colors={theme.colors.gradient.primary}
-              style={styles.logo}
-            >
-              <Ionicons name="flash" size={48} color="white" />
-            </LinearGradient>
+      <View style={styles.barRow}>
+        <View style={styles.bar}>
+          <Animated.View style={[styles.barFill, { width }]}>
+            <LinearGradient colors={[OB.violet, OB.pink]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill} />
           </Animated.View>
         </View>
+        <Text style={styles.percent}>{percent} %</Text>
+      </View>
 
-        {/* Titre */}
-        <Text style={styles.title}>Création de ton profil</Text>
-        <Text style={styles.subtitle}>
-          Notre IA personnalise ton expérience
-        </Text>
-
-        {/* Barre de progression premium */}
-        <View style={styles.progressContainer}>
-          <BlurView intensity={20} tint="dark" style={styles.progressBarWrapper}>
-            <View style={styles.progressBar}>
-              <Animated.View
-                style={[
-                  styles.progressFill,
-                  { width: progressWidth }
-                ]}
-              >
-                <LinearGradient
-                  colors={['#8B5CF6', '#EC4899']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={StyleSheet.absoluteFillObject}
-                />
-              </Animated.View>
-            </View>
-          </BlurView>
-          <Text style={styles.progressText}>
-            {Math.round(((currentStep + 1) / LOADING_STEPS.length) * 100)}%
-          </Text>
-        </View>
-
-        {/* Liste des étapes avec animations premium */}
-        <View style={styles.stepsList}>
-          {LOADING_STEPS.map((step, index) => {
-            const stepGlowOpacity = stepAnims[index].glow.interpolate({
-              inputRange: [0, 1],
-              outputRange: [0, 0.6],
-            });
-
-            return (
-              <Animated.View
-                key={index}
-                style={[
-                  styles.stepRow,
-                  {
-                    opacity: stepAnims[index].opacity,
-                    transform: [{ scale: stepAnims[index].scale }],
-                  },
-                  completedSteps.includes(index) && styles.stepRowCompleted,
-                ]}
-              >
-                {/* Glow pour l'étape active */}
-                {index === currentStep && !completedSteps.includes(index) && (
-                  <Animated.View
-                    style={[
-                      styles.stepGlow,
-                      { opacity: stepGlowOpacity }
-                    ]}
-                    pointerEvents="none"
-                  />
-                )}
-
-                <View style={styles.stepIconContainer}>
-                  {completedSteps.includes(index) ? (
-                    <Animated.View
-                      style={[
-                        styles.checkIcon,
-                        {
-                          transform: [{ scale: stepAnims[index].checkScale }],
-                        },
-                      ]}
-                    >
-                      <LinearGradient
-                        colors={['#22c55e', '#10B981']}
-                        style={styles.checkIconGradient}
-                      >
-                        <Ionicons name="checkmark-circle" size={28} color="white" />
-                      </LinearGradient>
-                    </Animated.View>
-                  ) : (
-                    <BlurView
-                      intensity={index === currentStep ? 30 : 10}
-                      tint="dark"
-                      style={[
-                        styles.stepIcon,
-                        index === currentStep && { backgroundColor: 'rgba(139, 92, 246, 0.3)' }
-                      ]}
-                    >
-                      <Ionicons
-                        name={step.icon as any}
-                        size={20}
-                        color={index === currentStep ? theme.colors.primary : theme.colors.text.tertiary}
-                      />
-                    </BlurView>
-                  )}
-                </View>
-                <Text
-                  style={[
-                    styles.stepText,
-                    completedSteps.includes(index) && styles.stepTextCompleted,
-                    index === currentStep && styles.stepTextActive,
-                  ]}
-                >
-                  {step.text}
-                </Text>
-              </Animated.View>
-            );
-          })}
-        </View>
-
-        {/* Message de fin avec animation premium */}
-        {isComplete && (
-          <Animated.View style={styles.completeContainer}>
-            <View style={styles.completeBadge}>
-              <LinearGradient
-                colors={theme.colors.gradient.primary}
-                style={styles.completeBadgeGradient}
-              >
-                <Ionicons name="sparkles" size={28} color="white" />
-              </LinearGradient>
-            </View>
-            <Text style={styles.completeText}>Profil créé avec succès ! 🎉</Text>
-          </Animated.View>
-        )}
-      </Animated.View>
-    </View>
+      <View style={styles.steps}>
+        {steps.map((s, i) => {
+          const done = percent >= 100 || i < current;
+          const active = i === current && !done;
+          return (
+            <MotiView key={i} animate={{ opacity: i <= current ? 1 : 0.35 }} transition={{ type: 'timing', duration: 300 }} style={styles.step}>
+              <View style={[styles.dot, done && styles.dotDone, active && styles.dotActive]}>
+                {done ? <Check size={14} color="#FFF" strokeWidth={3} /> : active ? <View style={styles.pulse} /> : null}
+              </View>
+              <Text style={[styles.stepText, (done || active) && { color: '#FFF' }]}>{s}</Text>
+            </MotiView>
+          );
+        })}
+      </View>
+    </OnboardingShell>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  centerGlow: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  glowCircle: {
-    width: width * 1.2,
-    height: width * 1.2,
-    borderRadius: width * 0.6,
-    backgroundColor: 'rgba(139, 92, 246, 0.2)',
-    position: 'absolute',
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 24,
-    paddingTop: 60,
-    paddingBottom: 40,
-  },
-  logoContainer: {
-    alignItems: 'center',
-    marginBottom: 40,
-    position: 'relative',
-  },
-  logoGlow: {
-    position: 'absolute',
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: 'rgba(139, 92, 246, 0.4)',
-    top: -10,
-    left: -10,
-  },
-  logo: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: theme.colors.primary,
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.8,
-    shadowRadius: 24,
-    elevation: 16,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: theme.colors.text.primary,
-    marginBottom: 12,
-    textAlign: 'center',
-  },
-  subtitle: {
-    fontSize: 16,
-    color: theme.colors.text.secondary,
-    textAlign: 'center',
-    marginBottom: 40,
-    lineHeight: 24,
-  },
-  progressContainer: {
-    width: '100%',
-    marginBottom: 48,
-  },
-  progressBarWrapper: {
-    borderRadius: 20,
-    padding: 4,
-    marginBottom: 12,
-    overflow: 'hidden',
-  },
-  progressBar: {
-    height: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 16,
-    shadowColor: '#8B5CF6',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 12,
-  },
-  progressText: {
-    color: theme.colors.text.primary,
-    fontSize: 28,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    textShadowColor: 'rgba(139, 92, 246, 0.5)',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 12,
-  },
-  stepsList: {
-    width: '100%',
-    marginBottom: 32,
-  },
-  stepRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 18,
-    paddingHorizontal: 20,
-    borderRadius: 20,
-    marginBottom: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  stepGlow: {
-    position: 'absolute',
-    width: '100%',
-    height: '100%',
-    backgroundColor: 'rgba(139, 92, 246, 0.2)',
-    borderRadius: 20,
-  },
-  stepRowCompleted: {
-    backgroundColor: 'rgba(34, 197, 94, 0.1)',
-    borderColor: 'rgba(34, 197, 94, 0.3)',
-  },
-  stepIconContainer: {
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  stepIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  checkIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#22c55e',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.6,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  checkIconGradient: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  stepText: {
-    flex: 1,
-    fontSize: 16,
-    color: theme.colors.text.secondary,
-    fontWeight: '500',
-  },
-  stepTextActive: {
-    color: theme.colors.primary,
-    fontWeight: '700',
-    textShadowColor: 'rgba(139, 92, 246, 0.3)',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 8,
-  },
-  stepTextCompleted: {
-    color: theme.colors.success,
-    fontWeight: '600',
-  },
-  completeContainer: {
-    alignItems: 'center',
-    marginTop: 20,
-  },
-  completeBadge: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    marginBottom: 20,
-    shadowColor: theme.colors.primary,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.6,
-    shadowRadius: 16,
-    elevation: 12,
-  },
-  completeBadgeGradient: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 35,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  completeText: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: theme.colors.text.primary,
-    textAlign: 'center',
-    textShadowColor: 'rgba(236, 72, 153, 0.5)',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 12,
-  },
+  orbWrap: { alignSelf: 'center', width: 132, height: 132, alignItems: 'center', justifyContent: 'center', marginBottom: 30 },
+  orbRing: { position: 'absolute', width: 132, height: 132, borderRadius: 66, overflow: 'hidden', opacity: 0.9 },
+  orbInner: { width: 118, height: 118, borderRadius: 59, backgroundColor: OB.bg, alignItems: 'center', justifyContent: 'center' },
+  logo: { width: 92, height: 92, borderRadius: 46 },
+
+  title: { color: '#FFF', fontSize: 28, fontWeight: '900', textAlign: 'center' },
+  subtitle: { color: OB.muted, fontSize: 15, textAlign: 'center', marginTop: 8 },
+
+  barRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 30, marginBottom: 30 },
+  bar: { flex: 1, height: 10, borderRadius: 5, backgroundColor: 'rgba(255,255,255,0.1)', overflow: 'hidden' },
+  barFill: { height: '100%', borderRadius: 5, overflow: 'hidden' },
+  percent: { color: '#FFF', fontSize: 16, fontWeight: '800', width: 52, textAlign: 'right' },
+
+  steps: { gap: 18 },
+  step: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  dot: { width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
+  dotActive: { borderColor: OB.pink },
+  dotDone: { backgroundColor: '#22C55E', borderColor: '#22C55E' },
+  pulse: { width: 10, height: 10, borderRadius: 5, backgroundColor: OB.pink },
+  stepText: { flex: 1, color: OB.muted, fontSize: 16, fontWeight: '600' },
 });

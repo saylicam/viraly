@@ -1,334 +1,242 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Modal, TouchableOpacity, TextInput, ScrollView, Alert } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, Modal, TouchableOpacity, TextInput, ScrollView, Alert, KeyboardAvoidingView, Platform, ActivityIndicator, Pressable } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
-import { theme } from '../../theme';
 import { saveTask, CalendarTask } from '../../services/calendarService';
 import { useAuth } from '../../hooks/useAuth';
-import { toLocalDateString, isValidDateString, isValidHourString } from '../../utils/date';
+import { toLocalDateString, isValidHourString } from '../../utils/date';
+import { TASK_TYPES } from './taskTypes';
 
 interface AddTaskModalProps {
   visible: boolean;
   onClose: () => void;
   onTaskAdded: () => void;
   defaultDate?: string;
+  defaultType?: CalendarTask['type'];
 }
 
-const TASK_TYPES: { key: CalendarTask['type']; label: string; icon: string; gradient: string[] }[] = [
-  { key: 'publish', label: 'Publication', icon: 'rocket-outline', gradient: ['#8B5CF6', '#EC4899'] },
-  { key: 'record', label: 'Enregistrement', icon: 'videocam-outline', gradient: ['#3B82F6', '#8B5CF6'] },
-  { key: 'idea', label: 'Idée', icon: 'bulb-outline', gradient: ['#F59E0B', '#EC4899'] },
-];
+const SUGGESTIONS: Record<CalendarTask['type'], string[]> = {
+  publish: ['Publier une vidéo', 'Publier une tendance', 'Faire un live'],
+  record: ['Tourner une vidéo', "Tourner 3 vidéos d'avance", 'Tourner une tendance'],
+  idea: ['Trouver 5 idées de vidéos', 'Choisir une tendance', 'Écrire mes accroches'],
+};
+const HOURS = ['08:00', '12:00', '17:00', '18:00', '19:00', '20:00', '21:00'];
+const DAYS = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
 
-export default function AddTaskModal({ visible, onClose, onTaskAdded, defaultDate }: AddTaskModalProps) {
+/** 21 jours à partir d'aujourd'hui (ou autour du jour choisi s'il est loin). Jamais dans le passé. */
+const buildDays = (selected: string) => {
+  const today = new Date(`${toLocalDateString()}T00:00:00`);
+  const offset = Math.round((+new Date(`${selected}T00:00:00`) - +today) / 864e5);
+  const start = offset > 14 ? offset - 3 : 0;
+  return Array.from({ length: 21 }, (_, i) => {
+    const diff = start + i;
+    const d = new Date(today);
+    d.setDate(today.getDate() + diff);
+    return { key: toLocalDateString(d), top: diff === 0 ? 'Auj.' : diff === 1 ? 'Demain' : DAYS[d.getDay()], num: d.getDate() };
+  });
+};
+
+/** Feuille d'ajout : type, titre (avec idées), jour et heure en un geste — rien à taper au clavier sauf le titre. */
+export default function AddTaskModal({ visible, onClose, onTaskAdded, defaultDate, defaultType }: AddTaskModalProps) {
   const { user } = useAuth();
-  const [selectedType, setSelectedType] = useState<CalendarTask['type']>('publish');
+  const insets = useSafeAreaInsets();
+  const [type, setType] = useState<CalendarTask['type']>('publish');
   const [title, setTitle] = useState('');
-  const [hour, setHour] = useState('19:00');
+  const [notes, setNotes] = useState('');
   const [date, setDate] = useState(defaultDate || toLocalDateString());
-  const [isSaving, setIsSaving] = useState(false);
+  const [hour, setHour] = useState('19:00');
+  const [customHour, setCustomHour] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  // À chaque ouverture, reprendre la date sélectionnée dans le calendrier
   useEffect(() => {
-    if (visible) {
-      setDate(defaultDate || toLocalDateString());
-    }
-  }, [visible, defaultDate]);
+    if (!visible) return;
+    const today = toLocalDateString();
+    setDate(defaultDate && defaultDate >= today ? defaultDate : today);
+    setType(defaultType ?? 'publish');
+    setTitle('');
+    setNotes('');
+    setHour('19:00');
+    setCustomHour(false);
+  }, [visible, defaultDate, defaultType]);
 
-  const handleSave = async () => {
-    if (isSaving) return;
+  const days = useMemo(() => buildDays(defaultDate || toLocalDateString()), [defaultDate, visible]);
 
+  const save = async () => {
+    if (saving) return;
     if (!title.trim()) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert('Titre manquant', 'Donne un titre à ta tâche.');
-      return;
-    }
-    if (!isValidDateString(date)) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert('Date invalide', 'Utilise le format AAAA-MM-JJ (ex : 2026-10-15).');
+      Alert.alert('Titre manquant', 'Choisis une idée ou écris un titre.');
       return;
     }
     if (!isValidHourString(hour)) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert('Heure invalide', 'Utilise le format HH:MM (ex : 19:00).');
+      Alert.alert('Heure invalide', 'Écris l’heure comme ceci : 19:30.');
       return;
     }
-
+    setSaving(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setIsSaving(true);
-
     try {
-      await saveTask({
-        date,
-        hour,
-        type: selectedType,
-        title: title.trim(),
-        createdBy: 'user',
-      }, user?.uid || null);
-
-      // Reset form
-      setTitle('');
-      setHour('19:00');
-      setSelectedType('publish');
-      
+      await saveTask({ date, hour, type, title: title.trim(), createdBy: 'user', ...(notes.trim() ? { notes: notes.trim() } : {}) }, user?.uid ?? null);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onTaskAdded();
-    } catch (error) {
-      console.error('Erreur sauvegarde tâche:', error);
+    } catch {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert(
-        "Tâche non enregistrée",
-        "Impossible d'enregistrer la tâche. Vérifie ta connexion internet et réessaie."
-      );
+      Alert.alert('Enregistrement impossible', 'Vérifie ta connexion internet et réessaie.');
     } finally {
-      setIsSaving(false);
+      setSaving(false);
     }
   };
 
+  const meta = TASK_TYPES[type];
+
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-    >
-      <BlurView intensity={50} tint="dark" style={styles.overlay}>
-        <View style={styles.modalContainer}>
-          <BlurView intensity={30} tint="dark" style={styles.modalContent}>
-            <LinearGradient
-              colors={['rgba(15, 5, 29, 0.95)', 'rgba(26, 11, 46, 0.95)']}
-              style={styles.modalGradient}
-            >
-              {/* Header */}
-              <View style={styles.header}>
-                <Text style={styles.title}>Nouvelle tâche</Text>
-                <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                  <Ionicons name="close" size={24} color={theme.colors.text.secondary} />
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.backdrop}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 16) + 8 }]}>
+          <View style={styles.grabber} />
+          <View style={styles.header}>
+            <Text style={styles.h1}>Nouvelle tâche</Text>
+            <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={styles.close}>
+              <Ionicons name="close" size={18} color="rgba(255,255,255,0.7)" />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            {/* Type */}
+            <View style={styles.segment}>
+              {(Object.keys(TASK_TYPES) as CalendarTask['type'][]).map((k) => {
+                const m = TASK_TYPES[k];
+                const on = k === type;
+                return (
+                  <TouchableOpacity key={k} activeOpacity={0.85} onPress={() => { Haptics.selectionAsync(); setType(k); }} style={[styles.segItem, on && { backgroundColor: `${m.color}26`, borderColor: m.color }]}>
+                    <Ionicons name={m.icon as any} size={16} color={on ? m.color : 'rgba(255,255,255,0.6)'} />
+                    <Text style={[styles.segText, on && { color: '#FFF' }]}>{m.short}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* Titre */}
+            <Text style={styles.label}>Quoi ?</Text>
+            <TextInput
+              value={title}
+              onChangeText={setTitle}
+              placeholder={SUGGESTIONS[type][0]}
+              placeholderTextColor="rgba(234,226,247,0.35)"
+              style={styles.input}
+              maxLength={80}
+              returnKeyType="done"
+            />
+            <View style={styles.chips}>
+              {SUGGESTIONS[type].map((sug) => (
+                <TouchableOpacity key={sug} onPress={() => { Haptics.selectionAsync(); setTitle(sug); }} style={[styles.chip, title === sug && { borderColor: meta.color }]}>
+                  <Text style={styles.chipText}>{sug}</Text>
                 </TouchableOpacity>
-              </View>
+              ))}
+            </View>
 
-              <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
-                {/* Type Selection */}
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Type de tâche</Text>
-                  <View style={styles.typeContainer}>
-                    {TASK_TYPES.map((type) => (
-                      <TouchableOpacity
-                        key={type.key}
-                        style={[
-                          styles.typeCard,
-                          selectedType === type.key && styles.typeCardSelected,
-                        ]}
-                        onPress={() => {
-                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                          setSelectedType(type.key);
-                        }}
-                        activeOpacity={0.85}
-                      >
-                        <LinearGradient
-                          colors={type.gradient}
-                          style={styles.typeIcon}
-                        >
-                          <Ionicons name={type.icon as any} size={20} color="white" />
-                        </LinearGradient>
-                        <Text style={[
-                          styles.typeLabel,
-                          selectedType === type.key && styles.typeLabelSelected,
-                        ]}>
-                          {type.label}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
+            {/* Jour */}
+            <Text style={styles.label}>Quand ?</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.days}>
+              {days.map((d) => {
+                const on = d.key === date;
+                return (
+                  <TouchableOpacity key={d.key} onPress={() => { Haptics.selectionAsync(); setDate(d.key); }} activeOpacity={0.85}>
+                    {on ? (
+                      <LinearGradient colors={['#FF4FF9', '#9013FE']} style={styles.day}>
+                        <Text style={[styles.dayTop, { color: '#FFF' }]}>{d.top}</Text>
+                        <Text style={styles.dayNum}>{d.num}</Text>
+                      </LinearGradient>
+                    ) : (
+                      <View style={[styles.day, styles.dayIdle]}>
+                        <Text style={styles.dayTop}>{d.top}</Text>
+                        <Text style={styles.dayNum}>{d.num}</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
 
-                {/* Title Input */}
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Titre</Text>
-                  <BlurView intensity={20} tint="dark" style={styles.inputContainer}>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Ex: Publier ma vidéo de comédie"
-                      placeholderTextColor={theme.colors.text.tertiary}
-                      value={title}
-                      onChangeText={setTitle}
-                      maxLength={100}
-                    />
-                  </BlurView>
-                </View>
-
-                {/* Date & Time */}
-                <View style={styles.row}>
-                  <View style={[styles.section, styles.halfSection]}>
-                    <Text style={styles.sectionTitle}>Date</Text>
-                    <BlurView intensity={20} tint="dark" style={styles.inputContainer}>
-                      <TextInput
-                        style={styles.input}
-                        placeholder="YYYY-MM-DD"
-                        placeholderTextColor={theme.colors.text.tertiary}
-                        value={date}
-                        onChangeText={setDate}
-                      />
-                    </BlurView>
-                  </View>
-
-                  <View style={[styles.section, styles.halfSection]}>
-                    <Text style={styles.sectionTitle}>Heure</Text>
-                    <BlurView intensity={20} tint="dark" style={styles.inputContainer}>
-                      <TextInput
-                        style={styles.input}
-                        placeholder="19:00"
-                        placeholderTextColor={theme.colors.text.tertiary}
-                        value={hour}
-                        onChangeText={setHour}
-                      />
-                    </BlurView>
-                  </View>
-                </View>
-              </ScrollView>
-
-              {/* Save Button */}
-              <View style={styles.footer}>
-                <TouchableOpacity
-                  style={styles.saveButton}
-                  onPress={handleSave}
-                  activeOpacity={0.85}
-                >
-                  <LinearGradient
-                    colors={theme.colors.gradient.primary}
-                    style={styles.saveButtonGradient}
-                  >
-                    <Text style={styles.saveButtonText}>Enregistrer</Text>
-                  </LinearGradient>
+            {/* Heure */}
+            <View style={styles.chips}>
+              {HOURS.map((h) => (
+                <TouchableOpacity key={h} onPress={() => { Haptics.selectionAsync(); setHour(h); setCustomHour(false); }} style={[styles.hour, !customHour && hour === h && styles.hourOn]}>
+                  <Text style={[styles.hourText, !customHour && hour === h && { color: '#FFF' }]}>{h.replace(':', ' h ').replace(' h 00', ' h')}</Text>
                 </TouchableOpacity>
-              </View>
+              ))}
+              {customHour ? (
+                <TextInput
+                  value={hour}
+                  onChangeText={setHour}
+                  placeholder="19:30"
+                  placeholderTextColor="rgba(234,226,247,0.35)"
+                  keyboardType="numbers-and-punctuation"
+                  maxLength={5}
+                  autoFocus
+                  style={[styles.hour, styles.hourOn, styles.hourInput]}
+                />
+              ) : (
+                <TouchableOpacity onPress={() => { setCustomHour(true); setHour(''); }} style={styles.hour}>
+                  <Text style={styles.hourText}>Autre…</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Notes */}
+            <Text style={styles.label}>Notes <Text style={styles.optional}>(facultatif)</Text></Text>
+            <TextInput
+              value={notes}
+              onChangeText={setNotes}
+              placeholder="Accroche, idée de plan, son à utiliser…"
+              placeholderTextColor="rgba(234,226,247,0.35)"
+              style={[styles.input, styles.notes]}
+              multiline
+              maxLength={500}
+            />
+          </ScrollView>
+
+          <TouchableOpacity activeOpacity={0.9} onPress={save} disabled={saving} style={styles.saveWrap}>
+            <LinearGradient colors={['#FF4FF9', '#9013FE']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.save}>
+              {saving ? <ActivityIndicator color="#FFF" /> : <Text style={styles.saveText}>Ajouter au calendrier</Text>}
             </LinearGradient>
-          </BlurView>
+          </TouchableOpacity>
         </View>
-      </BlurView>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContainer: {
-    width: '90%',
-    maxWidth: 500,
-    maxHeight: '80%',
-  },
-  modalContent: {
-    borderRadius: 28,
-    overflow: 'hidden',
-  },
-  modalGradient: {
-    padding: 24,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '900',
-    color: theme.colors.text.primary,
-  },
-  closeButton: {
-    padding: 4,
-  },
-  scrollContent: {
-    maxHeight: 400,
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: theme.colors.text.secondary,
-    marginBottom: 12,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  typeContainer: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  typeCard: {
-    flex: 1,
-    alignItems: 'center',
-    padding: 16,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  typeCardSelected: {
-    borderColor: theme.colors.primary,
-    borderWidth: 2,
-  },
-  typeIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  typeLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: theme.colors.text.secondary,
-    textAlign: 'center',
-  },
-  typeLabelSelected: {
-    color: theme.colors.primary,
-  },
-  inputContainer: {
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  input: {
-    padding: 16,
-    fontSize: 16,
-    color: theme.colors.text.primary,
-  },
-  row: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  halfSection: {
-    flex: 1,
-  },
-  footer: {
-    marginTop: 24,
-    paddingTop: 24,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  saveButton: {
-    borderRadius: 24,
-    overflow: 'hidden',
-  },
-  saveButtonGradient: {
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  saveButtonText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: 'white',
-    letterSpacing: 0.5,
-  },
+  backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.55)' },
+  sheet: { maxHeight: '88%', backgroundColor: '#140527', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, borderWidth: 1, borderColor: 'rgba(179,113,255,0.25)' },
+  grabber: { alignSelf: 'center', width: 40, height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.18)', marginTop: 10 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12, marginBottom: 14 },
+  h1: { color: '#FFF', fontSize: 22, fontWeight: '900' },
+  close: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.08)' },
+  segment: { flexDirection: 'row', gap: 8 },
+  segItem: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 11, borderRadius: 14, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.04)' },
+  segText: { color: 'rgba(255,255,255,0.6)', fontSize: 14, fontWeight: '800' },
+  label: { color: '#FFF', fontSize: 14, fontWeight: '800', marginTop: 18, marginBottom: 8 },
+  optional: { color: 'rgba(234,226,247,0.45)', fontWeight: '600' },
+  input: { color: '#FFF', fontSize: 16, paddingHorizontal: 14, paddingVertical: 13, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(179,113,255,0.25)' },
+  notes: { minHeight: 74, textAlignVertical: 'top' },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  chipText: { color: 'rgba(234,226,247,0.85)', fontSize: 13, fontWeight: '600' },
+  days: { gap: 8, paddingRight: 8 },
+  day: { width: 54, height: 62, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  dayIdle: { backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  dayTop: { color: 'rgba(234,226,247,0.6)', fontSize: 11.5, fontWeight: '700' },
+  dayNum: { color: '#FFF', fontSize: 19, fontWeight: '900', marginTop: 2 },
+  hour: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  hourOn: { backgroundColor: 'rgba(255,79,249,0.2)', borderColor: '#FF4FF9' },
+  hourText: { color: 'rgba(234,226,247,0.8)', fontSize: 13.5, fontWeight: '700' },
+  hourInput: { color: '#FFF', fontSize: 13.5, fontWeight: '700', minWidth: 70, textAlign: 'center', paddingVertical: 7 },
+  saveWrap: { marginTop: 16, borderRadius: 999, shadowColor: '#FF4FF9', shadowOpacity: 0.45, shadowRadius: 16, shadowOffset: { width: 0, height: 6 } },
+  save: { height: 54, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
+  saveText: { color: '#FFF', fontSize: 17, fontWeight: '900' },
 });
