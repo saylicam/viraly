@@ -62,6 +62,13 @@ router.get('/', requireAuth, async (req: AuthedRequest, res) => {
       },
       sounds: view.sounds.slice(0, FREE_SOUNDS),
       videos: view.videos.slice(0, FREE_VIDEOS),
+      // Aperçus floutés dans l'app : seulement la miniature et les vues (ni lien, ni titre, ni auteur)
+      previews: {
+        videos: view.videos.slice(FREE_VIDEOS, FREE_VIDEOS + 6).map((v: any) => ({ cover: v.cover, views: v.views, market: v.market })),
+        sounds: view.sounds.slice(FREE_SOUNDS, FREE_SOUNDS + 4).map((x: any) => ({ cover: x.cover, views: x.topVideo?.views ?? x.totalViews ?? null })),
+        ahead: view.notYetInFrance.slice(0, 4).map((x: any) => ({ cover: x.cover, views: x.topVideo?.views ?? x.totalViews ?? null })),
+        formats: view.formats.slice(0, 4).map((v: any) => ({ cover: v.cover, views: v.views })),
+      },
       notYetInFrance: [],
       formats: [],
       hashtags: view.hashtags.slice(0, FREE_HASHTAGS),

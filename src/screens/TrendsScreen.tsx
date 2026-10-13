@@ -31,11 +31,14 @@ export interface TrendSound {
   appearances: number; totalViews: number; markets: ('US' | 'FR')[];
   notYetInFrance: boolean; topVideo: TrendVideo | null;
 }
+interface Preview { cover: string | null; views: number | null; market?: 'US' | 'FR' }
 interface TrendHashtag { tag: string; videos: number; totalViews: number; markets: ('US' | 'FR')[]; generic: boolean }
 interface TrendsData {
   weekId: string; collectedAt: string; niche: string; limited: boolean;
   sounds: TrendSound[]; notYetInFrance: TrendSound[]; videos: TrendVideo[]; formats: TrendVideo[];
   hashtags?: TrendHashtag[]; genericHashtags?: TrendHashtag[];
+  /** Version gratuite : miniatures + vues des éléments cachés (affichées floutées) */
+  previews?: { videos?: Preview[]; sounds?: Preview[]; ahead?: Preview[]; formats?: Preview[] };
   lockedCounts?: { sounds: number; videos: number; notYetInFrance: number; formats: number; hashtags?: number };
 }
 
@@ -262,13 +265,45 @@ const VideoCard = ({ video, onRemix }: { video: TrendVideo; onRemix: () => void 
   );
 };
 
+/** Vraie vidéo de la semaine, floutée : on voit qu'elle existe (et ses vues), pas ce qu'elle contient. */
+const LockedHeroCard = ({ preview, onUnlock }: { preview: Preview; onUnlock: () => void }) => {
+  const src = resolveApiUrl(preview.cover);
+  return (
+    <TouchableOpacity activeOpacity={0.92} onPress={onUnlock} style={styles.heroCard}>
+      {src ? (
+        <Image source={{ uri: src }} style={StyleSheet.absoluteFillObject} resizeMode="cover" blurRadius={22} />
+      ) : (
+        <LinearGradient colors={['#3B1366', '#120424']} style={StyleSheet.absoluteFillObject} />
+      )}
+      <BlurView intensity={25} tint="dark" style={StyleSheet.absoluteFillObject} />
+      <View style={styles.heroTop} pointerEvents="none">
+        {preview.views ? (
+          <View style={styles.viewsPill}>
+            <Eye size={13} color="#FFF" />
+            <Text style={styles.viewsText}>{fmt(preview.views)} vues</Text>
+            {preview.market ? <Flag market={preview.market} /> : null}
+          </View>
+        ) : <View />}
+      </View>
+      <View style={styles.heroLockCenter} pointerEvents="none">
+        <View style={styles.heroLockIcon}><Lock size={24} color="#FFF" /></View>
+        <Text style={styles.heroLockTitle}>Vidéo star de la semaine</Text>
+        <Text style={styles.heroLockText}>Découvre-la et refais-la à ta façon</Text>
+        <View style={styles.heroLockedBtn}><Text style={styles.heroLockedBtnText}>Débloquer</Text></View>
+      </View>
+    </TouchableOpacity>
+  );
+};
+
 /** Bloc verrouillé : faux contenu flouté + pastille Premium (même style que l'analyse). */
-const LockedBlock = ({ label, why, onUnlock, height = 150 }: { label: string; why?: string; onUnlock: () => void; height?: number }) => (
+const LockedBlock = ({ label, why, onUnlock, height = 150, previews }: { label: string; why?: string; onUnlock: () => void; height?: number; previews?: Preview[] }) => (
   <TouchableOpacity activeOpacity={0.9} onPress={onUnlock} style={[styles.lockedBlock, { height }]}>
     <View style={styles.lockedGhost}>
-      {[0, 1, 2].map((i) => (
+      {[0, 1, 2, 3].map((i) => (
         <View key={i} style={styles.ghostRow}>
-          <View style={styles.ghostCover} />
+          {previews?.[i]?.cover ? (
+            <Image source={{ uri: resolveApiUrl(previews[i].cover) as string }} style={styles.ghostCover} blurRadius={10} />
+          ) : <View style={styles.ghostCover} />}
           <View style={{ flex: 1, gap: 8 }}>
             <View style={[styles.ghostLine, { width: '70%' }]} />
             <View style={[styles.ghostLine, { width: '40%' }]} />
@@ -532,7 +567,9 @@ export default function TrendsScreen({ navigation }: any) {
                   <HeroVideoCard video={v} onRemix={() => remix('video', v)} fav={isFavorite('video', v.id)} onFav={() => toggleFavorite(favVideo(v))} />
                 </MotiView>
               ))}
-              {limited && (data.lockedCounts?.videos ?? 0) > 0 ? (
+              {limited && data.previews?.videos?.length ? (
+                data.previews.videos.map((p, i) => <LockedHeroCard key={`lock${i}`} preview={p} onUnlock={openPaywall} />)
+              ) : limited && (data.lockedCounts?.videos ?? 0) > 0 ? (
                 <TouchableOpacity activeOpacity={0.9} onPress={openPaywall} style={[styles.heroCard, styles.heroLocked]}>
                   <Lock size={28} color="#FFF" />
                   <Text style={styles.heroLockedTitle}>+{data.lockedCounts!.videos} vidéos stars</Text>
@@ -548,6 +585,7 @@ export default function TrendsScreen({ navigation }: any) {
               <LockedBlock
                 label={data.lockedCounts?.notYetInFrance ? `Voir les ${data.lockedCounts.notYetInFrance} sons` : 'Prendre de l’avance'}
                 why="Ils explosent aux États-Unis et pas encore en France : sois parmi les premiers à les utiliser, c’est là que les vues sont les plus faciles."
+                previews={data.previews?.ahead}
                 onUnlock={openPaywall}
                 height={150}
               />
@@ -570,6 +608,8 @@ export default function TrendsScreen({ navigation }: any) {
               <LockedBlock
                 label={`Voir les ${data.lockedCounts!.sounds} autres sons`}
                 why="Des sons en pleine montée : poste avant qu’ils soient saturés."
+                previews={data.previews?.sounds}
+                height={170}
                 onUnlock={openPaywall}
               />
             ) : null}
@@ -594,6 +634,7 @@ export default function TrendsScreen({ navigation }: any) {
               <LockedBlock
                 label="Voir les formats"
                 why="Des idées de vidéos qui marchent en ce moment, prêtes à tourner, même sans son tendance."
+                previews={data.previews?.formats}
                 onUnlock={openPaywall}
                 height={150}
               />
@@ -738,12 +779,16 @@ const styles = StyleSheet.create({
   pitchBtn: { backgroundColor: '#FF4FF9', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 },
   pitchBtnText: { color: '#FFF', fontSize: 12.5, fontWeight: '900' },
   lockWhy: { color: '#FFF', fontSize: 13, fontWeight: '700', textAlign: 'center', paddingHorizontal: 18, marginBottom: 10, lineHeight: 18 },
+  heroLockCenter: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20, gap: 6 },
+  heroLockIcon: { width: 54, height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(144,19,254,0.8)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)', marginBottom: 4 },
+  heroLockTitle: { color: '#FFF', fontSize: 17, fontWeight: '900', textAlign: 'center' },
+  heroLockText: { color: 'rgba(255,255,255,0.85)', fontSize: 13, textAlign: 'center' },
   heroLockedBtn: { marginTop: 6, backgroundColor: '#FF4FF9', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 7 },
   heroLockedBtnText: { color: '#FFF', fontSize: 13, fontWeight: '900' },
   lockedBlock: { borderRadius: 22, overflow: 'hidden', backgroundColor: CARD_BG, borderWidth: 1, borderColor: CARD_BORDER, marginBottom: 12 },
   lockedGhost: { padding: 14, gap: 14 },
   ghostRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  ghostCover: { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(179,113,255,0.35)' },
+  ghostCover: { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(179,113,255,0.35)', overflow: 'hidden' },
   ghostLine: { height: 10, borderRadius: 5, backgroundColor: 'rgba(255,255,255,0.18)' },
   lockedOverlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(13, 0, 23, 0.25)' },
   lockPill: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, backgroundColor: 'rgba(144, 19, 254, 0.75)' },
