@@ -4,12 +4,36 @@
  * Usage (dans src/server) :  npx tsx scripts/test-push.ts [1|2]   (rendez-vous à simuler, 1 par défaut)
  */
 import 'dotenv/config';
-import { db } from '../src/firebase';
-import { loadLatestTrends } from '../src/services/trends';
-import { messageFor, type PushSlot } from '../src/services/push';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import type { PushSlot } from '../src/services/push';
+
+/**
+ * Le compte de service Firebase est sur Railway, pas dans le .env du PC :
+ * on prend le fichier JSON téléchargé depuis Firebase (dossier Téléchargements) s'il existe.
+ */
+const loadServiceAccountFile = () => {
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) return;
+  const dirs = [path.join(os.homedir(), 'Downloads'), path.join(os.homedir(), 'Téléchargements'), process.cwd()];
+  for (const dir of dirs) {
+    try {
+      const f = fs.readdirSync(dir).find((n) => n.includes('firebase-adminsdk') && n.endsWith('.json'));
+      if (f) {
+        process.env.FIREBASE_SERVICE_ACCOUNT = fs.readFileSync(path.join(dir, f), 'utf8');
+        console.log(`Compte de service Firebase lu depuis : ${path.join(dir, f)}`);
+        return;
+      }
+    } catch {}
+  }
+};
 
 (async () => {
-  if (!db) throw new Error('FIREBASE_SERVICE_ACCOUNT absent du .env du serveur');
+  loadServiceAccountFile();
+  const { db } = await import('../src/firebase');
+  const { loadLatestTrends } = await import('../src/services/trends');
+  const { messageFor } = await import('../src/services/push');
+  if (!db) throw new Error('Compte de service Firebase introuvable (fichier *firebase-adminsdk*.json dans Téléchargements)');
   const slot = (Number(process.argv[2] ?? 1) as PushSlot);
   const users = await db.collection('users').where('notificationsEnabled', '==', true).get();
   const list = users.docs
