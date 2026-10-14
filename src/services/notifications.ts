@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { doc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../../firebase';
-import type { CalendarTask } from './calendarService';
+import { getTasks, type CalendarTask } from './calendarService';
 
 /**
  * Notifications de Viraly.
@@ -73,9 +73,72 @@ export const enableTrendNotifications = async (): Promise<NotificationResult> =>
 };
 export const enableNotifications = enableTrendNotifications;
 
+// ---------- Interrupteur du Profil ----------
+
+/** « 1 » quand l'utilisateur a coupé les notifications dans Viraly (Profil). */
+const OFF_KEY = '@viraly_notif_off';
+const isTurnedOff = async () => (await AsyncStorage.getItem(OFF_KEY).catch(() => null)) === '1';
+
+export type NotificationState = {
+  /** Interrupteur affiché dans le Profil. */
+  enabled: boolean;
+  /** Autorisation d'iOS. */
+  permission: 'granted' | 'denied' | 'undetermined';
+  /** Faux quand iOS ne montrera plus sa fenêtre : il faut passer par les Réglages. */
+  canAskAgain: boolean;
+};
+
+export const getNotificationState = async (): Promise<NotificationState> => {
+  if (!Notifications) return { enabled: false, permission: 'undetermined', canAskAgain: false };
+  try {
+    const { status, canAskAgain } = await Notifications.getPermissionsAsync();
+    const permission = status === 'granted' ? 'granted' : status === 'denied' ? 'denied' : 'undetermined';
+    return { enabled: permission === 'granted' && !(await isTurnedOff()), permission, canAskAgain: canAskAgain !== false };
+  } catch {
+    return { enabled: false, permission: 'undetermined', canAskAgain: true };
+  }
+};
+
+/** Programme les rappels du téléphone (calendrier + relance) juste après l'activation. */
+const scheduleLocalReminders = async () => {
+  await scheduleComebackReminder();
+  try {
+    const uid = auth.currentUser?.uid ?? null;
+    await syncTaskReminders(await getTasks(uid));
+  } catch {}
+};
+
+/**
+ * Interrupteur « Notifications » du Profil.
+ *  - Activer : fenêtre d'Apple si besoin, jeton enregistré, rappels programmés.
+ *    Si iOS a déjà refusé, renvoie 'denied' : l'écran propose d'ouvrir les Réglages.
+ *  - Désactiver : plus de notifications du serveur (compte marqué), rappels du téléphone effacés.
+ */
+export const setNotificationsEnabled = async (on: boolean): Promise<NotificationResult> => {
+  if (!Notifications) return 'unavailable';
+  if (on) {
+    await AsyncStorage.removeItem(OFF_KEY).catch(() => {});
+    const result = await enableTrendNotifications();
+    if (result === 'granted') await scheduleLocalReminders();
+    return result;
+  }
+  await AsyncStorage.setItem(OFF_KEY, '1').catch(() => {});
+  await cancelAllLocalNotifications();
+  const user = auth.currentUser;
+  if (user) {
+    await setDoc(
+      doc(db, 'users', user.uid),
+      { notificationsEnabled: false, notificationsUpdatedAt: new Date().toISOString() },
+      { merge: true }
+    ).catch(() => {});
+  }
+  return 'granted';
+};
+
 /** À chaque ouverture : jeton à jour (il peut changer après une réinstallation). */
 export const refreshPushToken = async () => {
   try {
+    if (await isTurnedOff()) return;
     if (Notifications && (await Notifications.getPermissionsAsync()).status === 'granted') await saveToken();
   } catch {}
 };
@@ -89,6 +152,7 @@ const ASK_AGAIN_DAYS = 3;
 export const shouldPromptNotifications = async () => {
   if (!Notifications) return false;
   try {
+    if (await isTurnedOff()) return false; // coupé volontairement dans le Profil
     const { status, canAskAgain } = await Notifications.getPermissionsAsync();
     if (status === 'granted') return false;
     const last = Number((await AsyncStorage.getItem(ASKED_KEY)) ?? 0);
@@ -120,6 +184,7 @@ const TASK_TEXT: Record<CalendarTask['type'], (t: CalendarTask) => { title: stri
 export const syncTaskReminders = async (tasks: CalendarTask[]) => {
   if (!Notifications) return;
   try {
+    if (await isTurnedOff()) return;
     if ((await Notifications.getPermissionsAsync()).status !== 'granted') return;
     const scheduled = await Notifications.getAllScheduledNotificationsAsync();
     await Promise.all(
@@ -160,6 +225,7 @@ const COMEBACK_DAYS = 3;
 export const scheduleComebackReminder = async () => {
   if (!Notifications) return;
   try {
+    if (await isTurnedOff()) return;
     if ((await Notifications.getPermissionsAsync()).status !== 'granted') return;
     const scheduled = await Notifications.getAllScheduledNotificationsAsync();
     await Promise.all(

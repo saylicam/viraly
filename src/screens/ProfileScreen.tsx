@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Linking } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Linking, Switch, AppState } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MotiView } from 'moti';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,6 +19,7 @@ import {
 } from '../services/creatorProfile';
 import { useAnalysisHistory, historyStats, clearAnalysisHistory } from '../services/analysisHistory';
 import { clearAccountAudit } from '../services/accountAudit';
+import { getNotificationState, setNotificationsEnabled, notificationsAvailable } from '../services/notifications';
 
 const PINK = '#FF4FF9';
 const CARD_BG = '#1B0730';
@@ -53,6 +54,48 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
   const stats = historyStats(useAnalysisHistory());
   const name = firstName(profile);
   const version = Constants.expoConfig?.version ?? '';
+
+  // ---- Notifications : interrupteur ----
+  const [notifOn, setNotifOn] = useState(false);
+  const [notifBusy, setNotifBusy] = useState(false);
+  const refreshNotif = useCallback(async () => {
+    const st = await getNotificationState();
+    setNotifOn(st.enabled);
+  }, []);
+  useEffect(() => {
+    refreshNotif();
+    // Retour des Réglages d'iOS : l'interrupteur reflète la nouvelle autorisation
+    const sub = AppState.addEventListener('change', (s) => { if (s === 'active') refreshNotif(); });
+    return () => sub.remove();
+  }, [refreshNotif]);
+
+  const toggleNotifications = async (value: boolean) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setNotifOn(value);
+    setNotifBusy(true);
+    try {
+      const result = await setNotificationsEnabled(value);
+      if (value && result === 'denied') {
+        setNotifOn(false);
+        Alert.alert(
+          'Notifications bloquées',
+          'Tu les as refusées dans la fenêtre de l’iPhone. Pour les activer : Réglages → Viraly → Notifications → Autoriser.',
+          [
+            { text: 'Plus tard', style: 'cancel' },
+            { text: 'Ouvrir les Réglages', onPress: () => Linking.openSettings() },
+          ]
+        );
+      } else if (value && result !== 'granted') {
+        setNotifOn(false);
+        Alert.alert('Oups', 'Impossible d’activer les notifications pour le moment. Réessaie plus tard.');
+      } else if (value) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    } finally {
+      setNotifBusy(false);
+      refreshNotif();
+    }
+  };
 
   const runDeleteAccount = async (password?: string) => {
     setIsDeleting(true);
@@ -255,6 +298,30 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
           </View>
         ) : null}
 
+        {/* Notifications */}
+        {notificationsAvailable() ? (
+          <>
+            <Text style={styles.section}>Notifications</Text>
+            <View style={styles.group}>
+              <View style={[styles.row, { borderBottomWidth: 0 }]}>
+                <View style={[styles.rowIcon, { backgroundColor: `${PINK}1F` }]}><Ionicons name="notifications-outline" size={18} color={PINK} /></View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.rowLabel}>Notifications</Text>
+                  <Text style={styles.rowHint}>Sons qui explosent, idées de vidéos et rappels de ton calendrier</Text>
+                </View>
+                <Switch
+                  value={notifOn}
+                  onValueChange={toggleNotifications}
+                  disabled={notifBusy}
+                  trackColor={{ false: 'rgba(255,255,255,0.15)', true: PINK }}
+                  thumbColor="#FFF"
+                  ios_backgroundColor="rgba(255,255,255,0.15)"
+                />
+              </View>
+            </View>
+          </>
+        ) : null}
+
         {/* Aide */}
         <Text style={styles.section}>Aide</Text>
         <View style={styles.group}>
@@ -316,5 +383,6 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 13, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(179,113,255,0.18)' },
   rowIcon: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   rowLabel: { flex: 1, color: '#FFF', fontSize: 15, fontWeight: '600' },
+  rowHint: { color: 'rgba(234,226,247,0.55)', fontSize: 12, marginTop: 2, lineHeight: 16 },
   rowValue: { color: 'rgba(234,226,247,0.55)', fontSize: 14 },
 });

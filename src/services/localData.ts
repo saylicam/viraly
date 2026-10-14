@@ -26,6 +26,7 @@ export const clearLocalUserData = async () => {
       k === OWNER_KEY ||
       k === '@viraly_first_launch' ||
       k === '@viraly_guest_uid' ||
+      k === '@viraly_notif_off' ||
       k.startsWith('@viraly_calendar_')
     );
     if (stale.length) await AsyncStorage.multiRemove(stale);
