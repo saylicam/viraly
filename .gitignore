@@ -52,3 +52,7 @@ _to_delete/
 # Certificats de signature iOS (secrets) — ne jamais envoyer sur GitHub
 credentials.json
 credentials/
+
+# Visuels App Store (captures, vidéos) : gardés en local
+store/
+assets/icon-ancien-avec-texte.png
