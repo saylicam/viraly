@@ -9,7 +9,7 @@ import { sociavault, extractVideos } from './sociavault';
  * tendances : recherches de la semaine (vidéos les plus likées) aux États-Unis — où naissent
  * la plupart des tendances — et en France, pour chaque niche de l'app. On repère les sons qui
  * reviennent, leur nombre total de vidéos, et leur croissance d'une semaine à l'autre.
- * Coût : ~40 crédits SociaVault par collecte (une fois par semaine).
+ * Coût : ~33 crédits SociaVault par collecte (une fois par semaine).
  */
 
 export type Market = 'US' | 'FR';
@@ -17,26 +17,63 @@ export const NICHES = ['comedy', 'music', 'beauty', 'education', 'gaming', 'fitn
 export type Niche = (typeof NICHES)[number];
 
 /**
- * Requêtes par niche : [marché, mot-clé]. Deux mots-clés par marché et par niche pour
- * avoir assez de contenu propre à chaque niche ; une recherche vide est simplement ignorée.
+ * Requêtes par niche : [marché visé, mot-clé].
+ * ⚠️ Le paramètre `region` de SociaVault ne FILTRE PAS les résultats (il change seulement le pays
+ * du proxy). Le marché d'une vidéo est donc déduit de la vidéo elle-même (pays du créateur,
+ * langue de la légende) : voir marketOf(). Les mots-clés français ramènent surtout du contenu
+ * francophone ; on en met plus, car Viraly s'adresse d'abord aux créateurs francophones.
  * "general" = tendances toutes niches confondues (ne sert qu'à compléter une niche).
  */
 const QUERIES: Record<Niche | 'general', [Market, string][]> = {
-  general: [['US', 'trend'], ['US', 'dance challenge'], ['FR', 'tendance'], ['FR', 'pourtoi']],
-  comedy: [['US', 'comedy'], ['US', 'funny skit'], ['FR', 'humour'], ['FR', 'sketch drôle']],
-  music: [['US', 'singing'], ['US', 'cover song'], ['FR', 'chanson'], ['FR', 'chanteur']],
-  beauty: [['US', 'makeup'], ['US', 'skincare routine'], ['FR', 'maquillage'], ['FR', 'beauté']],
-  education: [['US', 'did you know'], ['US', 'life hack'], ['FR', 'astuce'], ['FR', 'le saviez-vous']],
-  gaming: [['US', 'gaming'], ['US', 'fortnite'], ['FR', 'gaming'], ['FR', 'jeux vidéo']],
-  fitness: [['US', 'gym'], ['US', 'workout'], ['FR', 'musculation'], ['FR', 'sport maison']],
-  tech: [['US', 'tech'], ['US', 'iphone tips'], ['FR', 'tech'], ['FR', 'astuce iphone']],
-  food: [['US', 'recipe'], ['US', 'easy dinner'], ['FR', 'recette'], ['FR', 'cuisine facile']],
-  travel: [['US', 'travel'], ['US', 'travel vlog'], ['FR', 'voyage'], ['FR', 'vacances']],
+  general: [['FR', 'tendance tiktok france'], ['FR', 'humour français'], ['FR', 'trend france'], ['US', 'trend']],
+  comedy: [['FR', 'humour'], ['FR', 'sketch drôle'], ['US', 'funny skit']],
+  music: [['FR', 'chanson française'], ['FR', 'rap français'], ['US', 'cover song']],
+  beauty: [['FR', 'maquillage'], ['FR', 'routine beauté'], ['US', 'makeup']],
+  education: [['FR', 'le saviez-vous'], ['FR', 'astuce'], ['US', 'did you know']],
+  gaming: [['FR', 'gaming fr'], ['FR', 'jeux vidéo'], ['US', 'gaming']],
+  fitness: [['FR', 'musculation'], ['FR', 'sport maison'], ['US', 'gym']],
+  tech: [['FR', 'astuce iphone'], ['FR', 'tech fr'], ['US', 'tech']],
+  food: [['FR', 'recette'], ['FR', 'cuisine facile'], ['US', 'recipe']],
+  travel: [['FR', 'voyage'], ['FR', 'vacances'], ['US', 'travel']],
 };
 
-/** En dessous, une vidéo ou un son n'est pas une « tendance » (filtre le bruit). */
-const MIN_VIDEO_VIEWS = 20_000;
-const MIN_SOUND_VIEWS = 50_000;
+/** Fil « tendances » de TikTok vu depuis chaque pays (1 crédit chacun). */
+const TRENDING_REGIONS: Market[] = ['FR', 'US'];
+
+/** Pays francophones regroupés dans le marché « FR » de l'app (France, Belgique, Suisse, Québec…). */
+const FRANCOPHONE = new Set(['FR', 'BE', 'CH', 'LU', 'MC', 'CA', 'MA', 'DZ', 'TN', 'SN', 'CI', 'RE', 'GP', 'MQ']);
+
+/**
+ * Marché réel d'une vidéo : francophone si le créateur est d'un pays francophone ou si la
+ * légende est en français ; sinon international (affiché 🇺🇸). En dernier recours, le marché visé.
+ */
+const marketOf = (raw: any, fallback: Market): Market => {
+  const regions = [raw?.region, raw?.author?.region].map((r) => String(r ?? '').toUpperCase()).filter(Boolean);
+  const lang = String(raw?.desc_language ?? raw?.author?.language ?? '').toLowerCase();
+  if (regions.some((r) => FRANCOPHONE.has(r)) || lang === 'fr') return 'FR';
+  if (regions.length || (lang && lang !== 'un')) return 'US';
+  return fallback;
+};
+
+/** En dessous, une vidéo ou un son n'est pas une « tendance » (filtre le bruit).
+ *  Seuil plus bas pour le contenu francophone : l'audience y est plus petite qu'aux US. */
+const MIN_VIDEO_VIEWS: Record<Market, number> = { FR: 5_000, US: 20_000 };
+const MIN_SOUND_VIEWS = 30_000;
+/** Une vidéo de plus de 10 jours n'est pas une tendance « de la semaine ». */
+const MAX_AGE_DAYS = 10;
+
+/** Mélange 2 contenus francophones pour 1 international (les premiers de chaque marché d'abord). */
+const interleave = <T extends { market: Market }>(items: T[]): T[] => {
+  const fr = items.filter((i) => i.market === 'FR');
+  const us = items.filter((i) => i.market !== 'FR');
+  const out: T[] = [];
+  while (fr.length || us.length) {
+    if (fr.length) out.push(fr.shift()!);
+    if (fr.length) out.push(fr.shift()!);
+    if (us.length) out.push(us.shift()!);
+  }
+  return out;
+};
 
 /** Hashtags trop larges pour aider à cibler : affichés à part, avec une explication. */
 const GENERIC_HASHTAGS = new Set([
@@ -134,7 +171,8 @@ const stageOf = (growth: number | null, usage: number | null): TrendStage => {
   return 'peak';
 };
 
-const toVideo = (v: any, market: Market, niche: string): TrendVideo => {
+const toVideo = (v: any, queryMarket: Market, niche: string): TrendVideo => {
+  const market = marketOf(v, queryMarket);
   const author = v.author?.unique_id ?? '';
   const music = v.music ?? {};
   return {
@@ -315,18 +353,30 @@ export const collectTrends = async (): Promise<TrendsSnapshot> => {
     const videos = new Map<string, TrendVideo>();
     // Infos des sons déjà présentes dans les résultats de recherche (évite des requêtes en plus)
     const soundMeta = new Map<string, { usage: number | null; cover: string | null; artist: string }>();
-    for (const [niche, queries] of Object.entries(QUERIES)) {
-      for (const [market, query] of queries) {
+    const report: string[] = [];
+    const tooOld = Date.now() / 1000 - MAX_AGE_DAYS * 86400;
+
+    // Fil tendances de TikTok (FR et US) + recherches par niche
+    const calls: { niche: string; market: Market; path: string; params: Record<string, string> }[] = [
+      ...TRENDING_REGIONS.map((market) => ({ niche: 'general', market, path: '/trending', params: { region: market } })),
+      ...Object.entries(QUERIES).flatMap(([niche, queries]) => queries.map(([market, query]) => ({
+        niche, market, path: '/search/keyword',
+        params: { query, region: market, date_posted: 'this-week', sort_by: 'most-liked' },
+      }))),
+    ];
+    for (const call of calls) {
+      {
+        const { niche, market } = call;
         credits++;
-        const json = await sociavault('/search/keyword', {
-          query,
-          region: market,
-          date_posted: 'this-week',
-          sort_by: 'most-liked',
-        });
-        for (const raw of extractVideos(json)) {
-          if (Number(raw.statistics?.play_count ?? 0) < MIN_VIDEO_VIEWS) continue;
+        const json = await sociavault(call.path, call.params);
+        const raws = extractVideos(json);
+        let kept = 0;
+        for (const raw of raws) {
+          const createdAt = Number(raw.create_time ?? 0);
+          if (createdAt && createdAt < tooOld) continue;
           const v = toVideo(raw, market, niche);
+          if (v.views < MIN_VIDEO_VIEWS[v.market]) continue;
+          kept++;
           const m = raw.music ?? {};
           if (v.soundId) {
             const prevMeta = soundMeta.get(v.soundId);
@@ -344,8 +394,10 @@ export const collectTrends = async (): Promise<TrendsSnapshot> => {
             videos.set(v.id, v);
           }
         }
+        report.push(`${call.params.query ?? `trending ${market}`}: ${json ? `${raws.length} reçues, ${kept} gardées` : 'ÉCHEC'}`);
       }
     }
+    console.log(`🔎 Collecte tendances — détail des requêtes :\n  ${report.join('\n  ')}`);
 
     // 2. Regroupement par son
     type Acc = { id: string; title: string; artist: string; cover: string | null; videos: TrendVideo[]; markets: Set<Market>; niches: Set<string> };
@@ -362,10 +414,13 @@ export const collectTrends = async (): Promise<TrendsSnapshot> => {
       bySound.set(v.soundId, acc);
     }
 
+    // Sons utilisés en France en priorité (l'app est francophone), puis les sons internationaux
     const candidates = [...bySound.values()]
       .map((a) => ({ ...a, views: a.videos.reduce((s, v) => s + v.views, 0) }))
-      .filter((a) => a.views >= MIN_SOUND_VIEWS)
-      .sort((a, b) => b.videos.length - a.videos.length || b.views - a.views)
+      .filter((a) => a.views >= MIN_SOUND_VIEWS || (a.markets.has('FR') && a.views >= MIN_SOUND_VIEWS / 3))
+      .sort((a, b) =>
+        Number(b.markets.has('FR')) - Number(a.markets.has('FR')) ||
+        b.videos.length - a.videos.length || b.views - a.views)
       .slice(0, SOUNDS_TO_TRACK);
 
     // 3. Sons suivis : nombre total de vidéos (déjà dans la recherche, sinon 1 requête), croissance
@@ -414,8 +469,14 @@ export const collectTrends = async (): Promise<TrendsSnapshot> => {
         (b.growthPct ?? 0) - (a.growthPct ?? 0) ||
         b.totalViews - a.totalViews
     );
+    // Classement final : 2 sons francophones pour 1 son international
+    const ranked = interleave(sounds.map((s) => ({ ...s, market: (s.markets.includes('FR') ? 'FR' : 'US') as Market })))
+      .map(({ market, ...s }) => s as TrendSound);
+    sounds.length = 0;
+    sounds.push(...ranked);
 
-    const all = [...videos.values()].sort((a, b) => b.views - a.views);
+    // Vidéos : les plus vues de chaque marché, mélangées (2 francophones pour 1 internationale)
+    const all = interleave([...videos.values()].sort((a, b) => b.views - a.views));
 
     // 4. Hashtags qui reviennent dans les vidéos tendance
     const hashtags = aggregateHashtags(all);
@@ -433,7 +494,7 @@ export const collectTrends = async (): Promise<TrendsSnapshot> => {
     await saveTrends(snapshot);
     await cleanupOldCovers();
     console.log(
-      `📈 Tendances collectées (${snapshot.weekId}) : ${videos.size} vidéos, ${sounds.length} sons, ${credits} crédits, ${Math.round((Date.now() - started) / 1000)} s`
+      `📈 Tendances collectées (${snapshot.weekId}) : ${videos.size} vidéos (${[...videos.values()].filter((v) => v.market === 'FR').length} francophones), ${sounds.length} sons (${sounds.filter((x) => x.markets.includes('FR')).length} utilisés en France), ${credits} crédits, ${Math.round((Date.now() - started) / 1000)} s`
     );
     return snapshot;
   } finally {

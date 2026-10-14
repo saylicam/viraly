@@ -111,6 +111,13 @@ const STEPS: Step[] = [
   },
 ];
 
+const StepScroll = ({ scroll, children }: { scroll: boolean; children: React.ReactNode }) =>
+  scroll ? (
+    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} bounces={false}>
+      {children}
+    </ScrollView>
+  ) : <View style={{ flex: 1 }}>{children}</View>;
+
 export default function QuestionnaireScreen({ navigation }: QuestionnaireScreenProps) {
   const { user } = useAuth();
   const [index, setIndex] = useState(0);
@@ -127,6 +134,13 @@ export default function QuestionnaireScreen({ navigation }: QuestionnaireScreenP
     loadLocalProfile().then((p) => { if (p?.tiktok) setHandle(p.tiktok); }).catch(() => {});
   }, []);
   const advancing = useRef(false);
+  // Clavier ouvert : on masque les textes d'aide pour que rien ne passe sous les boutons
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  React.useEffect(() => {
+    const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () => setKeyboardOpen(true));
+    const hide = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => setKeyboardOpen(false));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
 
   const step = STEPS[index];
   const selected = answers[step.key] ?? [];
@@ -259,9 +273,11 @@ export default function QuestionnaireScreen({ navigation }: QuestionnaireScreenP
           <Text style={styles.count}>{index + 1}/{STEPS.length}</Text>
         </View>
 
+        {/* Étapes avec clavier : défilables, pour que rien ne passe sous les boutons */}
+        <StepScroll scroll={step.kind === 'handle' || step.kind === 'text'}>
         <MotiView key={step.key} from={{ opacity: 0, translateX: 24 }} animate={{ opacity: 1, translateX: 0 }} transition={{ type: 'timing', duration: 320 }} style={{ flex: 1 }}>
-          <Text style={styles.title}>{step.title(firstName)}</Text>
-          <Text style={styles.subtitle}>{step.subtitle}</Text>
+          <Text style={[styles.title, keyboardOpen && step.kind === 'handle' && { fontSize: 24, lineHeight: 29 }]}>{step.title(firstName)}</Text>
+          {keyboardOpen && step.kind === 'handle' ? null : <Text style={styles.subtitle}>{step.subtitle}</Text>}
 
           {step.kind === 'handle' ? (
             preview ? (
@@ -307,7 +323,7 @@ export default function QuestionnaireScreen({ navigation }: QuestionnaireScreenP
                   {checking ? <ActivityIndicator color={OB.pink} /> : null}
                 </View>
                 {handleError ? <Text style={styles.handleError}>{handleError}</Text> : null}
-                <View style={styles.perks}>
+                {keyboardOpen ? null : <View style={styles.perks}>
                   {[
                     { i: 'stats-chart-outline' as const, t: 'Tes vraies stats : vues, engagement, régularité' },
                     { i: 'sparkles-outline' as const, t: 'Ce qui marche chez toi, et pourquoi' },
@@ -318,7 +334,7 @@ export default function QuestionnaireScreen({ navigation }: QuestionnaireScreenP
                       <Text style={styles.perkText}>{p.t}</Text>
                     </View>
                   ))}
-                </View>
+                </View>}
               </View>
             )
           ) : step.kind === 'text' ? (
@@ -374,6 +390,7 @@ export default function QuestionnaireScreen({ navigation }: QuestionnaireScreenP
             </ScrollView>
           )}
         </MotiView>
+        </StepScroll>
       </OnboardingShell>
     </KeyboardAvoidingView>
   );

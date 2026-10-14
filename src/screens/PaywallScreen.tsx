@@ -50,7 +50,7 @@ export default function PaywallScreen({ navigation, route }: PaywallScreenProps)
   }, [canClose]);
   const [isBuying, setIsBuying] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState<PlanKey>('annual');
+  const [selectedPlan, setSelectedPlan] = useState<PlanKey>('monthly');
   const {
     monthlyPackage, annualPackage, monthlyPrice, annualPrice,
     purchasePackage, restorePurchases, isPremium, isLoading: rcLoading,
@@ -176,6 +176,15 @@ export default function PaywallScreen({ navigation, route }: PaywallScreenProps)
         {/* Formules */}
         <MotiView from={{ opacity: 0, translateY: 12 }} animate={{ opacity: 1, translateY: 0 }} transition={{ delay: 350 }} style={styles.plans}>
           <PlanRow
+            selected={selectedPlan === 'monthly'}
+            onPress={() => { Haptics.selectionAsync(); setSelectedPlan('monthly'); }}
+            title="Mensuel"
+            price={rcLoading ? '…' : monthlyLabel}
+            period="/ mois"
+            sub="Sans engagement"
+            trial={monthlyHasTrial}
+          />
+          <PlanRow
             selected={selectedPlan === 'annual'}
             onPress={() => { Haptics.selectionAsync(); setSelectedPlan('annual'); }}
             title="Annuel"
@@ -184,15 +193,6 @@ export default function PaywallScreen({ navigation, route }: PaywallScreenProps)
             period="/ mois"
             sub={`${annualLabel} facturé une fois par an`}
             trial={annualHasTrial}
-          />
-          <PlanRow
-            selected={selectedPlan === 'monthly'}
-            onPress={() => { Haptics.selectionAsync(); setSelectedPlan('monthly'); }}
-            title="Mensuel"
-            price={rcLoading ? '…' : monthlyLabel}
-            period="/ mois"
-            sub="Sans engagement"
-            trial={monthlyHasTrial}
           />
         </MotiView>
       </ScrollView>

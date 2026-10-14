@@ -47,6 +47,17 @@ router.get('/', requireAuth, async (req: AuthedRequest, res) => {
     return res.json({ success: true, data: { ...view, niche: niche ?? 'all', limited: false } });
   }
 
+  // Version gratuite : les MEILLEURES places du classement sont sous cadenas (floutées),
+  // et ce sont des places plus basses qui restent visibles (ex. 8e et 9e sons).
+  // On envoie seulement miniature + vues + rang pour les éléments cachés.
+  const preview = (x: any, rank: number) => ({
+    rank, cover: x.cover ?? x.topVideo?.cover ?? null, views: x.views ?? x.topVideo?.views ?? x.totalViews ?? null, market: x.market ?? (x.markets?.includes?.('FR') ? 'FR' : x.markets ? 'US' : undefined),
+  });
+  const soundsTop = view.sounds.slice(0, 10);
+  const freeSoundsFrom = Math.max(0, soundsTop.length - FREE_SOUNDS);
+  const videosTop = view.videos.slice(0, 6);
+  const freeVideosFrom = Math.max(0, videosTop.length - FREE_VIDEOS);
+
   return res.json({
     success: true,
     data: {
@@ -54,20 +65,19 @@ router.get('/', requireAuth, async (req: AuthedRequest, res) => {
       niche: niche ?? 'all',
       limited: true,
       lockedCounts: {
-        sounds: Math.max(0, view.sounds.length - FREE_SOUNDS),
-        videos: Math.max(0, view.videos.length - FREE_VIDEOS),
+        sounds: freeSoundsFrom,
+        videos: freeVideosFrom,
         notYetInFrance: view.notYetInFrance.length,
         formats: view.formats.length,
         hashtags: Math.max(0, view.hashtags.length - FREE_HASHTAGS),
       },
-      sounds: view.sounds.slice(0, FREE_SOUNDS),
-      videos: view.videos.slice(0, FREE_VIDEOS),
-      // Aperçus floutés dans l'app : seulement la miniature et les vues (ni lien, ni titre, ni auteur)
+      sounds: soundsTop.slice(freeSoundsFrom).map((x: any, i: number) => ({ ...x, rank: freeSoundsFrom + i + 1 })),
+      videos: videosTop.slice(freeVideosFrom).map((x: any, i: number) => ({ ...x, rank: freeVideosFrom + i + 1 })),
       previews: {
-        videos: view.videos.slice(FREE_VIDEOS, FREE_VIDEOS + 6).map((v: any) => ({ cover: v.cover, views: v.views, market: v.market })),
-        sounds: view.sounds.slice(FREE_SOUNDS, FREE_SOUNDS + 4).map((x: any) => ({ cover: x.cover, views: x.topVideo?.views ?? x.totalViews ?? null })),
-        ahead: view.notYetInFrance.slice(0, 4).map((x: any) => ({ cover: x.cover, views: x.topVideo?.views ?? x.totalViews ?? null })),
-        formats: view.formats.slice(0, 4).map((v: any) => ({ cover: v.cover, views: v.views })),
+        videos: videosTop.slice(0, freeVideosFrom).map((v: any, i: number) => preview(v, i + 1)),
+        sounds: soundsTop.slice(0, freeSoundsFrom).map((x: any, i: number) => preview(x, i + 1)),
+        ahead: view.notYetInFrance.slice(0, 6).map((x: any, i: number) => preview(x, i + 1)),
+        formats: view.formats.slice(0, 6).map((v: any, i: number) => preview(v, i + 1)),
       },
       notYetInFrance: [],
       formats: [],
