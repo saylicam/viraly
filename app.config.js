@@ -74,7 +74,9 @@ module.exports = () => {
         [
           "expo-notifications",
           {
-            color: "#9013FE"
+            color: "#9013FE",
+            // Viraly Dev (ad hoc) et l'App Store utilisent tous les deux l'APNs de production.
+            mode: "production"
           }
         ]
       ],
