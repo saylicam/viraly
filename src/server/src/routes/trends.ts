@@ -53,10 +53,14 @@ router.get('/', requireAuth, async (req: AuthedRequest, res) => {
   const preview = (x: any, rank: number) => ({
     rank, cover: x.cover ?? x.topVideo?.cover ?? null, views: x.views ?? x.topVideo?.views ?? x.totalViews ?? null, market: x.market ?? (x.markets?.includes?.('FR') ? 'FR' : x.markets ? 'US' : undefined),
   });
+  // Gratuit : le podium (n°1 à 3) reste caché, mais on offre de VRAIES bonnes tendances
+  // (n°4 et 5 pour les sons, n°3 pour les vidéos) pour prouver la qualité de la sélection.
   const soundsTop = view.sounds.slice(0, 10);
-  const freeSoundsFrom = Math.max(0, soundsTop.length - FREE_SOUNDS);
+  const freeSoundIdx = soundsTop.length >= 5 ? [3, 4] : soundsTop.map((_, i) => i).slice(-FREE_SOUNDS);
   const videosTop = view.videos.slice(0, 6);
-  const freeVideosFrom = Math.max(0, videosTop.length - FREE_VIDEOS);
+  const freeVideoIdx = videosTop.length >= 3 ? [2] : videosTop.map((_, i) => i).slice(-FREE_VIDEOS);
+  const lockedSounds = soundsTop.map((x: any, i: number) => ({ x, i })).filter(({ i }) => !freeSoundIdx.includes(i));
+  const lockedVideos = videosTop.map((x: any, i: number) => ({ x, i })).filter(({ i }) => !freeVideoIdx.includes(i));
 
   return res.json({
     success: true,
@@ -65,17 +69,17 @@ router.get('/', requireAuth, async (req: AuthedRequest, res) => {
       niche: niche ?? 'all',
       limited: true,
       lockedCounts: {
-        sounds: freeSoundsFrom,
-        videos: freeVideosFrom,
+        sounds: lockedSounds.length,
+        videos: lockedVideos.length,
         notYetInFrance: view.notYetInFrance.length,
         formats: view.formats.length,
         hashtags: Math.max(0, view.hashtags.length - FREE_HASHTAGS),
       },
-      sounds: soundsTop.slice(freeSoundsFrom).map((x: any, i: number) => ({ ...x, rank: freeSoundsFrom + i + 1 })),
-      videos: videosTop.slice(freeVideosFrom).map((x: any, i: number) => ({ ...x, rank: freeVideosFrom + i + 1 })),
+      sounds: freeSoundIdx.map((i) => ({ ...soundsTop[i], rank: i + 1 })),
+      videos: freeVideoIdx.map((i) => ({ ...videosTop[i], rank: i + 1 })),
       previews: {
-        videos: videosTop.slice(0, freeVideosFrom).map((v: any, i: number) => preview(v, i + 1)),
-        sounds: soundsTop.slice(0, freeSoundsFrom).map((x: any, i: number) => preview(x, i + 1)),
+        videos: lockedVideos.map(({ x, i }) => preview(x, i + 1)),
+        sounds: lockedSounds.map(({ x, i }) => preview(x, i + 1)),
         ahead: view.notYetInFrance.slice(0, 6).map((x: any, i: number) => preview(x, i + 1)),
         formats: view.formats.slice(0, 6).map((v: any, i: number) => preview(v, i + 1)),
       },

@@ -426,7 +426,7 @@ const PremiumTrendsBanner = ({ onUnlock }: { onUnlock: () => void }) => (
     <LinearGradient colors={['rgba(255,79,249,0.22)', 'rgba(144,19,254,0.22)']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.pitch}>
       <View style={styles.pitchIcon}><Lock size={18} color="#FFF" /></View>
       <View style={{ flex: 1 }}>
-        <Text style={styles.pitchTitle}>Tu vois 2 sons et 1 vidéo sur toute la sélection</Text>
+        <Text style={styles.pitchTitle}>2 sons et 1 vidéo star offerts cette semaine</Text>
         <Text style={styles.pitchText}>{PREMIUM_PITCH}.</Text>
       </View>
       <View style={styles.pitchBtn}><Text style={styles.pitchBtnText}>Débloquer</Text></View>
@@ -608,15 +608,15 @@ export default function TrendsScreen({ navigation }: any) {
               style={styles.heroScroll}
               contentContainerStyle={styles.heroList}
             >
-              {/* Version gratuite : les meilleures places d'abord, floutées */}
-              {limited && data.previews?.videos?.length
-                ? data.previews.videos.map((p, i) => <LockedHeroCard key={`lock${i}`} preview={p} onUnlock={openPaywall} />)
-                : null}
               {data.videos.map((v, i) => (
                 <MotiView key={v.id} from={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: Math.min(i, 3) * 80 }}>
                   <HeroVideoCard video={v} onRemix={() => remix('video', v)} fav={isFavorite('video', v.id)} onFav={() => toggleFavorite(favVideo(v))} />
                 </MotiView>
               ))}
+              {/* Version gratuite : une vraie vidéo star offerte, puis les autres floutées */}
+              {limited && data.previews?.videos?.length
+                ? data.previews.videos.map((p, i) => <LockedHeroCard key={`lock${i}`} preview={p} onUnlock={openPaywall} />)
+                : null}
               {limited && !data.previews?.videos?.length && (data.lockedCounts?.videos ?? 0) > 0 ? (
                 <TouchableOpacity activeOpacity={0.9} onPress={openPaywall} style={[styles.heroCard, styles.heroLocked]}>
                   <Lock size={28} color="#FFF" />
@@ -657,15 +657,20 @@ export default function TrendsScreen({ navigation }: any) {
               <>
                 <TouchableOpacity activeOpacity={0.9} onPress={openPaywall} style={styles.topLockBanner}>
                   <Lock size={14} color="#FFF" />
-                  <Text style={styles.topLockText}>Le top {data.previews.sounds.length} de la semaine est réservé à Premium : poste avant que ces sons soient saturés.</Text>
+                  <Text style={styles.topLockText}>Le podium de la semaine et les sons en pleine montée sont réservés à Premium : poste avant qu’ils soient saturés.</Text>
                 </TouchableOpacity>
-                {data.previews.sounds.map((p, i) => <LockedSoundRow key={`ls${i}`} preview={p} onUnlock={openPaywall} />)}
               </>
             ) : null}
-            {data.sounds.map((s, i) => (
-              <MotiView key={s.id} from={{ opacity: 0, translateY: 10 }} animate={{ opacity: 1, translateY: 0 }} transition={{ delay: Math.min(i, 6) * 60 }}>
-                <SoundRow sound={s} rank={(s as any).rank ?? i + 1} onRemix={() => remix('sound', s)} fav={isFavorite('sound', s.id)} onFav={() => toggleFavorite(favSound(s))} />
+            {/* Classement complet : sons offerts à leur vraie place, les autres floutés */}
+            {[
+              ...data.sounds.map((s, i) => ({ rank: (s as any).rank ?? i + 1, sound: s as TrendSound | null, preview: null as Preview | null })),
+              ...(limited ? data.previews?.sounds ?? [] : []).map((p) => ({ rank: p.rank ?? 99, sound: null as TrendSound | null, preview: p as Preview | null })),
+            ].sort((a, b) => a.rank - b.rank).map((row, i) => row.sound ? (
+              <MotiView key={row.sound.id} from={{ opacity: 0, translateY: 10 }} animate={{ opacity: 1, translateY: 0 }} transition={{ delay: Math.min(i, 6) * 60 }}>
+                <SoundRow sound={row.sound} rank={row.rank} onRemix={() => remix('sound', row.sound!)} fav={isFavorite('sound', row.sound.id)} onFav={() => toggleFavorite(favSound(row.sound!))} />
               </MotiView>
+            ) : (
+              <LockedSoundRow key={`ls${row.rank}`} preview={row.preview!} onUnlock={openPaywall} />
             ))}
 
             {/* 4. Hashtags */}
