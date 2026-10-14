@@ -2,7 +2,9 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { Platform } from 'react-native';
 import { signOut as firebaseSignOut } from 'firebase/auth';
 import Purchases from 'react-native-purchases';
-import { auth } from '../../firebase';
+import { doc, setDoc } from 'firebase/firestore';
+import { auth, db } from '../../firebase';
+import { cancelAllLocalNotifications } from '../services/notifications';
 import { useAuth } from './AuthContext';
 import { fetchRemoteProfile, loadLocalProfile, setLocalProfile, profileToAnswers } from '../services/creatorProfile';
 import { finalizeOnboarding } from '../services/onboarding';
@@ -119,6 +121,12 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
   const consumeWelcomePaywall = useCallback(() => setWelcomePaywall(false), []);
 
   const signOut = useCallback(async () => {
+    // Ce téléphone ne doit plus recevoir les notifications de ce compte
+    const current = auth.currentUser;
+    if (current) {
+      await setDoc(doc(db, 'users', current.uid), { notificationsEnabled: false }, { merge: true }).catch(() => {});
+    }
+    await cancelAllLocalNotifications();
     if (Platform.OS === 'ios') {
       try {
         if (!(await Purchases.isAnonymous())) await Purchases.logOut();

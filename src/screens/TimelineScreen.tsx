@@ -23,6 +23,7 @@ import { useCreatorProfile, firstName, NICHE_LABELS, POSTS_PER_WEEK } from '../s
 import { useAnalysisHistory, historyStats } from '../services/analysisHistory';
 import { apiService, resolveApiUrl } from '../services/api';
 import { useAnalysisGate } from '../hooks/useAnalysisGate';
+import { syncTaskReminders } from '../services/notifications';
 
 const PINK = '#FF4FF9';
 const VIOLET = '#B371FF';
@@ -85,6 +86,7 @@ export default function TimelineScreen() {
   const loadAllTasks = async () => {
     try {
       const all = await getTasks(user?.uid || null);
+      syncTaskReminders(all); // rappels du calendrier (aussi sur un nouveau téléphone)
       setAllTasks(all);
       // Publications prévues par l'IA avec une ancienne niche : on les remet à jour
       const label = niche ? NICHE_LABELS[niche] : null;

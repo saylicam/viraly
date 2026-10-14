@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
@@ -33,6 +33,8 @@ import { theme } from '../theme';
 import { ProtectedScreen } from '../components/ProtectedScreen';
 import { useSession } from '../context/SessionContext';
 import { useRevenueCat } from '../context/RevenueCatContext';
+import NotificationPrompt from '../components/notifications/NotificationPrompt';
+import { refreshPushToken, scheduleComebackReminder, shouldPromptNotifications } from '../services/notifications';
 import { useAnalysisGate } from '../hooks/useAnalysisGate';
 
 // Wrapper pour AnalyzeScreen avec le bon fond
@@ -118,8 +120,38 @@ function useWelcomePaywall(navigation: any) {
   }, [welcomePaywall, isLoading, isPremium]);
 }
 
+/**
+ * Proposition d'activer les notifications : une fois sur l'accueil (après l'écran Premium
+ * de bienvenue), puis au plus tous les 3 jours tant que ce n'est pas accepté.
+ */
+function useNotificationPrompt(navigation: any) {
+  const { welcomePaywall } = useSession();
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    refreshPushToken();
+    scheduleComebackReminder();
+  }, []);
+  useEffect(() => {
+    if (welcomePaywall) return undefined;
+    let timer: any;
+    const check = () => {
+      clearTimeout(timer);
+      timer = setTimeout(async () => {
+        // Pas pendant que l'écran Premium (ou un autre écran) est par-dessus
+        if (!navigation.isFocused()) return;
+        if (await shouldPromptNotifications()) setShow(true);
+      }, 1500);
+    };
+    check();
+    const unsub = navigation.addListener('focus', check);
+    return () => { clearTimeout(timer); unsub(); };
+  }, [welcomePaywall, navigation]);
+  return { show, close: () => setShow(false) };
+}
+
 function MainTabs({ navigation }: any) {
   useWelcomePaywall(navigation);
+  const notif = useNotificationPrompt(navigation);
   return (
     <ProtectedScreen>
       <Tab.Navigator
@@ -205,6 +237,7 @@ function MainTabs({ navigation }: any) {
         }}
       />
       </Tab.Navigator>
+      <NotificationPrompt visible={notif.show} onClose={notif.close} />
     </ProtectedScreen>
   );
 }

@@ -15,6 +15,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useCreatorProfile, POSTS_PER_WEEK } from '../../services/creatorProfile';
 import { toLocalDateString } from '../../utils/date';
 import { TASK_TYPES, typeMeta } from './taskTypes';
+import { syncTaskReminders } from '../../services/notifications';
 
 const MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 const DOW = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
@@ -79,7 +80,9 @@ export default function CalendarScreen() {
   const load = useCallback(async (pull = false) => {
     if (pull) setRefreshing(true);
     try {
-      setTasks(await getTasks(uid));
+      const list = await getTasks(uid);
+      setTasks(list);
+      syncTaskReminders(list); // rappels 30 min avant chaque tâche à venir
       setError(false);
     } catch {
       setError(true);

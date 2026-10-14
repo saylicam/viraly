@@ -1,6 +1,6 @@
 import { env } from '../env';
 import { collectTrends, loadLatestTrends } from '../services/trends';
-import { sendWeeklyTrendsPush } from '../services/push';
+import { sendWeeklyTrendsPush, sendScheduledPush } from '../services/push';
 
 /**
  * Collecte automatique une fois par semaine (TRENDS_INTERVAL_DAYS).
@@ -22,6 +22,9 @@ const checkAndRun = async () => {
     if (age >= env.TRENDS_INTERVAL_DAYS * 24 * HOUR) {
       console.log('📈 Lancement de la collecte hebdomadaire des tendances…');
       await runTrendsCycle();
+    } else {
+      // Rendez-vous du jeudi 18 h et du samedi 11 h (heure de Paris)
+      await sendScheduledPush(latest);
     }
   } catch (e: any) {
     console.error('❌ Collecte des tendances échouée:', e?.message ?? e);

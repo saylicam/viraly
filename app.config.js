@@ -69,13 +69,14 @@ module.exports = () => {
         ],
         "expo-apple-authentication",
         "expo-web-browser",
-        // Notifications : à réactiver quand la capacité Push sera ajoutée chez Apple
-        // [
-        //   "expo-notifications",
-        //   {
-        //     color: "#9013FE"
-        //   }
-        // ]
+        // Notifications (tendances envoyées par le serveur + rappels du calendrier sur le téléphone).
+        // Nécessite la capacité « Push Notifications » sur les identifiants Apple et un rebuild.
+        [
+          "expo-notifications",
+          {
+            color: "#9013FE"
+          }
+        ]
       ],
 
       extra: {

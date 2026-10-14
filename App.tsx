@@ -22,10 +22,11 @@ LogBox.ignoreLogs(['Purchase was cancelled']);
  * Utilise SessionProvider pour choisir les écrans (intro, questionnaire ou accueil)
  */
 export default function App() {
-  // Appui sur la notification « tendances de la semaine » : ouvrir l'onglet Tendances
-  useEffect(() => onNotificationTap((data) => {
-    if (data?.screen === 'Trends' && navigationRef.isReady() && navigationRef.getRootState()?.routeNames?.includes('Main')) {
-      navigationRef.navigate('Main', { screen: 'Trends' });
+    useEffect(() => onNotificationTap((data) => {
+    // Appui sur une notification : ouvre l'onglet concerné (Tendances ou Calendrier)
+    const tab = data?.screen === 'Calendar' ? 'Calendar' : data?.screen === 'Trends' ? 'Trends' : null;
+    if (tab && navigationRef.isReady() && navigationRef.getRootState()?.routeNames?.includes('Main')) {
+      navigationRef.navigate('Main', { screen: tab });
     }
   }), []);
 
